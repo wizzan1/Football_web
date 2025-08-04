@@ -1,0 +1,28 @@
+<!-- app/templates/compose.html (new template for composing messages) -->
+{% extends "base.html" %}
+{% block title %}Compose Message{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Compose New Message</h1>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('game_bp.compose') }}">
+            <div class="mb-3">
+                <label for="recipient" class="form-label">Recipient Username</label>
+                <input type="text" class="form-control" id="recipient" name="recipient" required>
+            </div>
+            <div class="mb-3">
+                <label for="subject" class="form-label">Subject</label>
+                <input type="text" class="form-control" id="subject" name="subject" required>
+            </div>
+            <div class="mb-3">
+                <label for="body" class="form-label">Message Body</label>
+                <textarea class="form-control" id="body" name="body" rows="10" required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Send Message</button>
+            <a href="{{ url_for('game_bp.mailbox') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

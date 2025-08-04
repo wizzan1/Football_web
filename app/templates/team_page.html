@@ -1,10 +1,10 @@
-<!-- app/templates/team_page.html (corrected syntax and indented properly) -->
+<!-- app/templates/team_page.html (updated with Challenge button if not owner) -->
 {% extends "base.html" %}
 {% block title %}{{ team.name }}{% endblock %}
 {% block content %}
 <div class="row">
     <!-- Main content column -->
-    <div class="col-md-12">  <!-- Changed to full width since sidebar is removed -->
+    <div class="col-md-12">
         <!-- Sub-navigation for team management -->
         <ul class="nav nav-tabs mb-3">
             <li class="nav-item">
@@ -30,9 +30,16 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h3 class="card-title mb-0">Squad List</h3>
-                    <a href="{{ url_for('game_bp.dashboard') }}" class="btn btn-outline-secondary btn-sm">
-                        <i class="bi bi-arrow-left"></i> Back to Dashboard
-                    </a>
+                    <div>
+                        <a href="{{ url_for('game_bp.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-arrow-left"></i> Back to Dashboard
+                        </a>
+                        {% if not is_owner %}
+                        <form method="POST" action="{{ url_for('game_bp.challenge_team', team_id=team.id) }}" class="d-inline ms-2">
+                            <button type="submit" class="btn btn-primary btn-sm">Challenge to Friendly Match</button>
+                        </form>
+                        {% endif %}
+                    </div>
                 </div>
                
                 <div class="table-responsive">

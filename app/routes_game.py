@@ -1,8 +1,9 @@
-# app/routes_game.py (updated with search and user_profile routes, removed ownership checks for viewing)
+# app/routes_game.py (updated with fix for accept_challenge)
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 from app import db
-from .models import User, Team, Player, Position
+from .models import User, Team, Player, Position, Message
 import random
+from datetime import datetime
 
 game_bp = Blueprint('game_bp', __name__)
 
@@ -50,18 +51,14 @@ def team_page(team_id):
         return redirect(url_for('auth_bp.login'))
    
     team = Team.query.get_or_404(team_id)
-    # Removed ownership check to allow public viewing
-   
-    # NEW: Set the selected team in session only if owned by the user
     user = User.query.filter_by(username=session['username']).first()
-    if team.user_id == user.id:
+    is_owner = (team.user_id == user.id)
+    if is_owner:
         session['selected_team_id'] = team.id
    
-    # Custom sorting logic
     position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
-   
     sorted_players = sorted(team.players, key=lambda p: (position_order[p.position], p.shirt_number))
-    return render_template('team_page.html', team=team, players=sorted_players, is_owner=(team.user_id == user.id))
+    return render_template('team_page.html', team=team, players=sorted_players, is_owner=is_owner)
 
 @game_bp.route('/delete-team/<int:team_id>', methods=['POST'])
 def delete_team(team_id):
@@ -76,7 +73,6 @@ def delete_team(team_id):
     db.session.delete(team)
     db.session.commit()
     flash(f"Team '{team.name}' has been deleted.", "success")
-    # Clear selected team if it was the deleted one
     if 'selected_team_id' in session and session['selected_team_id'] == team_id:
         session.pop('selected_team_id')
     return redirect(url_for('game_bp.dashboard'))
@@ -110,24 +106,20 @@ def create_team():
         return redirect(url_for('game_bp.dashboard'))
     return render_template('create_team.html')
 
-# Route to view individual player details
 @game_bp.route('/player/<int:player_id>')
 def player_page(player_id):
     if 'username' not in session:
         return redirect(url_for('auth_bp.login'))
 
     player = Player.query.get_or_404(player_id)
-    # Removed ownership check to allow public viewing
     user = User.query.filter_by(username=session['username']).first()
     is_owner = (player.team.user_id == user.id)
     return render_template('player_page.html', player=player, is_owner=is_owner)
 
-# Stub route for coming soon features
 @game_bp.route('/coming-soon')
 def coming_soon():
     return render_template('coming_soon.html')
 
-# NEW: Route for searching users and teams
 @game_bp.route('/search', methods=['GET', 'POST'])
 def search():
     if 'username' not in session:
@@ -144,7 +136,6 @@ def search():
     
     return render_template('search.html', query=query, users=users, teams=teams)
 
-# NEW: Route for viewing user profile
 @game_bp.route('/user/<username>')
 def user_profile(username):
     if 'username' not in session:
@@ -152,3 +143,199 @@ def user_profile(username):
     
     profile_user = User.query.filter_by(username=username).first_or_404()
     return render_template('user_profile.html', profile_user=profile_user)
+
+@game_bp.route('/challenge/<int:team_id>', methods=['POST'])
+def challenge_team(team_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    challenged_team = Team.query.get_or_404(team_id)
+    user = User.query.filter_by(username=session['username']).first()
+    
+    if challenged_team.user_id == user.id:
+        flash("You cannot challenge your own team.", "danger")
+        return redirect(url_for('game_bp.team_page', team_id=team_id))
+    
+    # Assume the challenger selects one of their teams; for simplicity, use selected_team if available
+    if 'selected_team_id' not in session:
+        flash("Select one of your teams first to challenge with.", "warning")
+        return redirect(url_for('game_bp.dashboard'))
+    
+    challenger_team = Team.query.get(session['selected_team_id'])
+    if challenger_team is None:
+        flash("Invalid selected team.", "danger")
+        return redirect(url_for('game_bp.team_page', team_id=team_id))
+    
+    if challenger_team.user_id != user.id:
+        flash("Invalid selected team.", "danger")
+        return redirect(url_for('game_bp.team_page', team_id=team_id))
+    
+    # Create challenge message
+    message = Message(
+        sender_id=user.id,
+        recipient_id=challenged_team.user_id,
+        subject=f"Challenge to Friendly Match from {challenger_team.name}",
+        body=f"{user.username} has challenged your team {challenged_team.name} to a friendly match with their team {challenger_team.name}. Accept?",
+        is_challenge=True,
+        challenger_team_id=challenger_team.id,
+        challenged_team_id=challenged_team.id
+    )
+    db.session.add(message)
+    db.session.commit()
+    
+    flash("Challenge sent!", "success")
+    return redirect(url_for('game_bp.team_page', team_id=team_id))
+
+@game_bp.route('/mailbox')
+def mailbox():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    user = User.query.filter_by(username=session['username']).first()
+    received = Message.query.filter_by(recipient_id=user.id).order_by(Message.timestamp.desc()).all()
+    sent = Message.query.filter_by(sender_id=user.id).order_by(Message.timestamp.desc()).all()
+    
+    return render_template('mailbox.html', received=received, sent=sent)
+
+@game_bp.route('/mail/<int:message_id>')
+def view_mail(message_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    message = Message.query.get_or_404(message_id)
+    user = User.query.filter_by(username=session['username']).first()
+    
+    if message.recipient_id != user.id and message.sender_id != user.id:
+        flash("You do not have permission to view this message.", "danger")
+        return redirect(url_for('game_bp.mailbox'))
+    
+    if message.recipient_id == user.id and not message.is_read:
+        message.is_read = True
+        db.session.commit()
+    
+    return render_template('view_mail.html', message=message)
+
+@game_bp.route('/accept_challenge/<int:message_id>', methods=['POST'])
+def accept_challenge(message_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    message = Message.query.get_or_404(message_id)
+    user = User.query.filter_by(username=session['username']).first()
+    
+    if message.recipient_id != user.id or not message.is_challenge:
+        flash("Invalid challenge.", "danger")
+        return redirect(url_for('game_bp.mailbox'))
+    
+    if message.is_accepted:
+        flash("Challenge already accepted.", "info")
+        return redirect(url_for('game_bp.view_mail', message_id=message_id))
+    
+    message.is_accepted = True
+    db.session.commit()
+    
+    # For now, just flash; later, schedule match
+    flash("Challenge accepted! Match will be scheduled soon.", "success")
+    
+    # NEW: Query the teams using IDs
+    challenged_team = Team.query.get(message.challenged_team_id)
+    challenger_team = Team.query.get(message.challenger_team_id)
+    
+    # Send response message to sender
+    response = Message(
+        sender_id=user.id,
+        recipient_id=message.sender_id,
+        subject=f"Challenge Accepted: {challenged_team.name} vs {challenger_team.name}",
+        body=f"{user.username} has accepted your challenge. The friendly match between {challenged_team.name} and {challenger_team.name} is accepted."
+    )
+    db.session.add(response)
+    db.session.commit()
+    
+    return redirect(url_for('game_bp.view_mail', message_id=message_id))
+
+@game_bp.route('/send_message/<username>', methods=['POST'])
+def send_message(username):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    recipient = User.query.filter_by(username=username).first_or_404()
+    sender = User.query.filter_by(username=session['username']).first()
+    
+    if recipient.id == sender.id:
+        flash("You cannot send a message to yourself.", "danger")
+        return redirect(url_for('game_bp.user_profile', username=username))
+    
+    subject = request.form.get('subject')
+    body = request.form.get('body')
+    
+    if not subject or not body:
+        flash("Subject and body are required.", "danger")
+        return redirect(url_for('game_bp.user_profile', username=username))
+    
+    message = Message(
+        sender_id=sender.id,
+        recipient_id=recipient.id,
+        subject=subject,
+        body=body
+    )
+    db.session.add(message)
+    db.session.commit()
+    
+    flash("Message sent!", "success")
+    return redirect(url_for('game_bp.user_profile', username=username))
+
+@game_bp.route('/compose', methods=['GET', 'POST'])
+def compose():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    if request.method == 'POST':
+        recipient_username = request.form.get('recipient')
+        subject = request.form.get('subject')
+        body = request.form.get('body')
+        
+        if not recipient_username or not subject or not body:
+            flash("All fields are required.", "danger")
+            return redirect(url_for('game_bp.compose'))
+        
+        recipient = User.query.filter_by(username=recipient_username).first()
+        if not recipient:
+            flash("Recipient not found.", "danger")
+            return redirect(url_for('game_bp.compose'))
+        
+        sender = User.query.filter_by(username=session['username']).first()
+        if recipient.id == sender.id:
+            flash("You cannot send a message to yourself.", "danger")
+            return redirect(url_for('game_bp.compose'))
+        
+        message = Message(
+            sender_id=sender.id,
+            recipient_id=recipient.id,
+            subject=subject,
+            body=body
+        )
+        db.session.add(message)
+        db.session.commit()
+        
+        flash("Message sent!", "success")
+        return redirect(url_for('game_bp.mailbox'))
+    
+    return render_template('compose.html')
+
+@game_bp.route('/delete_mail/<int:message_id>', methods=['POST'])
+def delete_mail(message_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    message = Message.query.get_or_404(message_id)
+    user = User.query.filter_by(username=session['username']).first()
+    
+    if message.recipient_id != user.id and message.sender_id != user.id:
+        flash("You do not have permission to delete this message.", "danger")
+        return redirect(url_for('game_bp.mailbox'))
+    
+    db.session.delete(message)
+    db.session.commit()
+    
+    flash("Message deleted.", "success")
+    return redirect(url_for('game_bp.mailbox'))

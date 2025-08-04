@@ -1,4 +1,4 @@
-<!-- app/templates/base.html (updated for nicer selected team display) -->
+<!-- app/templates/base.html (updated with Mailbox link in nav) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -25,6 +25,9 @@
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
                         <a class="nav-link active" href="{{ url_for('game_bp.dashboard') }}">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('game_bp.mailbox') }}">Mailbox</a>
                     </li>
                 </ul>
                 <form class="d-flex me-3" action="{{ url_for('game_bp.search') }}" method="post">

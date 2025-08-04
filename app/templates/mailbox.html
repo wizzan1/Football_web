@@ -1,0 +1,67 @@
+<!-- app/templates/mailbox.html (updated to professional layout with tabs, delete buttons) -->
+{% extends "base.html" %}
+{% block title %}Mailbox{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h1 class="h2 mb-0">Mailbox</h1>
+        <a href="{{ url_for('game_bp.compose') }}" class="btn btn-primary">Compose New</a>
+    </div>
+    <div class="card-body">
+        <ul class="nav nav-tabs mb-3">
+            <li class="nav-item">
+                <a class="nav-link active" data-bs-toggle="tab" href="#inbox">Inbox</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#sent">Sent</a>
+            </li>
+        </ul>
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="inbox">
+                <div class="list-group">
+                    {% for msg in received %}
+                    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {% if not msg.is_read %}list-group-item-secondary{% endif %}">
+                        <a href="{{ url_for('game_bp.view_mail', message_id=msg.id) }}" class="flex-grow-1">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1 {% if not msg.is_read %}fw-bold{% endif %}">{{ msg.subject }}</h5>
+                                <small>{{ msg.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                            </div>
+                            <small>From: {{ msg.sender.username }}</small>
+                        </a>
+                        <form method="POST" action="{{ url_for('game_bp.delete_mail', message_id=msg.id) }}" class="ms-2">
+                            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete this message?');">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <p>No received messages.</p>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="tab-pane fade" id="sent">
+                <div class="list-group">
+                    {% for msg in sent %}
+                    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                        <a href="{{ url_for('game_bp.view_mail', message_id=msg.id) }}" class="flex-grow-1">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1">{{ msg.subject }}</h5>
+                                <small>{{ msg.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                            </div>
+                            <small>To: {{ msg.recipient.username }}</small>
+                        </a>
+                        <form method="POST" action="{{ url_for('game_bp.delete_mail', message_id=msg.id) }}" class="ms-2">
+                            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete this message?');">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <p>No sent messages.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

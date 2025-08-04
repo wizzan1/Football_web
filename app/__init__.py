@@ -1,7 +1,8 @@
-# app/__init__.py (updated to import session)
+# app/__init__.py (updated with Markup from markupsafe)
 import os
 from flask import Flask, session
 from flask_sqlalchemy import SQLAlchemy
+from markupsafe import Markup
 
 # Get the absolute path of the directory where this file is located
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -24,7 +25,7 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(game_bp)
 
-    # NEW: Context processor to inject selected_team into all templates
+    # Context processor to inject selected_team into all templates
     @app.context_processor
     def inject_selected_team():
         if 'selected_team_id' in session:
@@ -32,5 +33,12 @@ def create_app():
             selected_team = Team.query.get(session['selected_team_id'])
             return dict(selected_team=selected_team)
         return dict(selected_team=None)
+
+    # NEW: Custom Jinja filter for nl2br
+    def nl2br(value):
+        result = value.replace('\n', '<br>\n')
+        return Markup(result)
+
+    app.jinja_env.filters['nl2br'] = nl2br
 
     return app

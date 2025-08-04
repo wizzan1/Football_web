@@ -1,0 +1,61 @@
+Directory Structure
+textfootball_game_web/
+├── app/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── routes_auth.py
+│   ├── routes_game.py
+│   ├── database.db
+│   └── templates/
+│       ├── base.html
+│       ├── coming_soon.html
+│       ├── create_team.html
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       ├── player_page.html
+│       ├── register.html
+│       ├── search.html
+│       ├── team_page.html
+│       └── user_profile.html
+├── .gitignore
+├── README.md
+├── requirements.txt
+└── run.py
+File Breakdown
+
+run.py: The main entry point to start the application. It imports and runs the app created by the app factory.
+app/: The main Python package containing all core application code.
+app/init.py: The app factory (create_app) that initializes Flask, configures the secret key and database URI, initializes the SQLAlchemy db object, registers the route blueprints, and includes a context processor to inject the selected_team into templates for displaying active team context in the navigation bar.
+app/models.py: Defines the database schema using SQLAlchemy ORM classes.
+
+User: Stores user accounts with hashed passwords. Has a one-to-many relationship with Team.
+Team: Stores team information and is linked to a User. Has a one-to-many relationship with Player. Includes nullable fields for league, division, and season (defaults to None, as teams do not start in a league).
+Player: Stores player attributes (name, age, skill, etc.) and is linked to a Team.
+
+
+app/routes_auth.py: A Flask Blueprint for authentication. It handles all logic for /register, /login, and /logout routes, interacting with the User model and Flask's session. Successful registration automatically logs in the user and redirects to the dashboard.
+app/routes_game.py: A Flask Blueprint for core gameplay. It handles routes for the main homepage (/), the user dashboard (/dashboard), team creation (/create-team), team deletion, viewing a specific team (/team/<id>), viewing a specific player (/player/<id>), a placeholder for upcoming features (/coming-soon), searching users and teams (/search), and viewing a user profile (/user/<username>). The /team/<id> route sets the selected team in the session for owned teams and includes custom player sorting. Team and player views are public but hide management elements for non-owners. Includes logic for generating a starter squad during team creation.</id></username></id></id>
+app/database.db: The SQLite database file where all user, team, and player data is stored.
+app/templates/: Contains all user-facing HTML files.
+
+base.html: The main site template, which all other pages inherit from. It includes Bootstrap, Bootstrap Icons, a navigation bar with a search form for users/teams, and displays the selected team's details (if any) using badges for league/division/season. Features a background image.
+coming_soon.html: A simple placeholder page for features under development (e.g., Matches, League, Tactics).
+create_team.html: Form for creating a new team, selecting name and country.
+dashboard.html: The user's main dashboard, listing their teams with "Manage Team" and "Delete" options. Displays team details using badges for league/division/season.
+index.html: The landing page for unauthenticated users (likely with login/register links).
+login.html: Form for user login.
+player_page.html: Detail view for an individual player, showing attributes in a definition list.
+register.html: Form for user registration.
+search.html: Displays search results for users and teams, with links to profiles and team pages.
+team_page.html: The team management hub, featuring a sub-navigation tab bar (Squad, Matches, etc., with non-Squad tabs linking to coming-soon if owned). Shows the sorted squad list in a table with links to player pages. Management tabs are hidden for non-owners.
+user_profile.html: Displays a user's profile, listing their teams with links to team pages and badges for league/division/season.
+
+
+requirements.txt: Lists all the Python packages the project depends on (e.g., Flask, Flask-SQLAlchemy).
+
+How to Run
+
+Install dependencies: pip install -r requirements.txt
+Create the database: flask shell, then run from app import db, models and db.create_all().
+Start the server: python run.py.
