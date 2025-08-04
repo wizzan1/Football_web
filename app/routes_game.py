@@ -5,7 +5,7 @@ import random
 
 game_bp = Blueprint('game_bp', __name__)
 
-# Mock data for player generation
+# Mock data for player generation (can be moved later)
 FIRST_NAMES = ["Erik", "Lars", "Mikael", "Anders", "Johan", "Karl", "Fredrik"]
 LAST_NAMES = ["Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson"]
 
@@ -44,6 +44,21 @@ def dashboard():
     user = User.query.filter_by(username=session['username']).first()
     return render_template('dashboard.html', user=user)
 
+@game_bp.route('/team/<int:team_id>')
+def team_page(team_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    team = Team.query.get_or_404(team_id)
+    user = User.query.filter_by(username=session['username']).first()
+
+    # Security Check: Make sure the logged-in user owns this team
+    if team.user_id != user.id:
+        flash("You do not have permission to view this page.")
+        return redirect(url_for('game_bp.dashboard'))
+
+    return render_template('team_page.html', team=team)
+
 @game_bp.route('/create-team', methods=['GET', 'POST'])
 def create_team():
     if 'username' not in session:
@@ -62,15 +77,11 @@ def create_team():
             flash('That team name is already taken.')
             return redirect(url_for('game_bp.create_team'))
         
-        # 1. Create and save the team to get its ID
         new_team = Team(name=team_name, country=country, user_id=user.id)
         db.session.add(new_team)
         db.session.commit()
         
-        # 2. Now that the team has an ID, generate the players for it
         _generate_starter_squad(new_team)
-        
-        # 3. Commit the new players to the database
         db.session.commit()
         
         return redirect(url_for('game_bp.dashboard'))
