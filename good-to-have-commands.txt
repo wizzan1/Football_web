@@ -9,6 +9,7 @@ git push origin main
 
 skapa ny databas
 
+flask shell
 from app import db, models
 db.create_all()
 exit()

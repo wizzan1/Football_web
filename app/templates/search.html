@@ -1,0 +1,37 @@
+<!-- app/templates/search.html (new template for search results) -->
+{% extends "base.html" %}
+{% block title %}Search Results{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Search Results for "{{ query }}"</h1>
+    </div>
+    <div class="card-body">
+        <h3>Users</h3>
+        {% if users %}
+            <ul class="list-group mb-4">
+                {% for user in users %}
+                    <li class="list-group-item">
+                        <a href="{{ url_for('game_bp.user_profile', username=user.username) }}">{{ user.username }}</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No users found.</p>
+        {% endif %}
+        
+        <h3>Teams</h3>
+        {% if teams %}
+            <ul class="list-group">
+                {% for team in teams %}
+                    <li class="list-group-item">
+                        <a href="{{ url_for('game_bp.team_page', team_id=team.id) }}">{{ team.name }}</a> ({{ team.country }})
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No teams found.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

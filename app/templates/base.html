@@ -1,4 +1,4 @@
-<!-- app/templates/base.html (updated to use injected selected_team from context processor) -->
+<!-- app/templates/base.html (updated for nicer selected team display) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -27,10 +27,19 @@
                         <a class="nav-link active" href="{{ url_for('game_bp.dashboard') }}">Dashboard</a>
                     </li>
                 </ul>
+                <form class="d-flex me-3" action="{{ url_for('game_bp.search') }}" method="post">
+                    <input class="form-control me-2" type="search" placeholder="Search users/teams" name="query" aria-label="Search">
+                    <button class="btn btn-outline-success" type="submit">Search</button>
+                </form>
                 {% if selected_team %}
-                    <span class="navbar-text me-3">
-                        Selected Team: {{ selected_team.name }} | Liga: {{ selected_team.league }} | Serie: {{ selected_team.division }} | Säsong {{ selected_team.season }}
-                    </span>
+                    <div class="navbar-text me-3">
+                        <strong>Selected Team:</strong> {{ selected_team.name }} <br>
+                        <small>
+                            <span class="badge bg-secondary">Liga: {{ selected_team.league or 'None' }}</span>
+                            <span class="badge bg-secondary">Serie: {{ selected_team.division or 'None' }}</span>
+                            <span class="badge bg-secondary">Säsong: {{ selected_team.season or 'None' }}</span>
+                        </small>
+                    </div>
                 {% endif %}
                 {% if session.username %}
                 <span class="navbar-text me-3">

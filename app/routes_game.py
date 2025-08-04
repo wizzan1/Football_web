@@ -1,4 +1,4 @@
-# app/routes_game.py (no changes needed, but provided for completeness without extra indents)
+# app/routes_game.py (updated with search and user_profile routes, removed ownership checks for viewing)
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 from app import db
 from .models import User, Team, Player, Position
@@ -50,22 +50,18 @@ def team_page(team_id):
         return redirect(url_for('auth_bp.login'))
    
     team = Team.query.get_or_404(team_id)
+    # Removed ownership check to allow public viewing
+   
+    # NEW: Set the selected team in session only if owned by the user
     user = User.query.filter_by(username=session['username']).first()
-    if team.user_id != user.id:
-        flash("You do not have permission to view this page.", "danger")
-        return redirect(url_for('game_bp.dashboard'))
+    if team.user_id == user.id:
+        session['selected_team_id'] = team.id
    
-    # NEW: Set the selected team in session
-    session['selected_team_id'] = team.id
-   
-    # NEW: Custom sorting logic
-    # Define the desired sort order for positions
+    # Custom sorting logic
     position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
    
-    # Sort the players first by the custom position order, then by shirt number
     sorted_players = sorted(team.players, key=lambda p: (position_order[p.position], p.shirt_number))
-    # Pass the pre-sorted list of players to the template
-    return render_template('team_page.html', team=team, players=sorted_players)
+    return render_template('team_page.html', team=team, players=sorted_players, is_owner=(team.user_id == user.id))
 
 @game_bp.route('/delete-team/<int:team_id>', methods=['POST'])
 def delete_team(team_id):
@@ -80,7 +76,7 @@ def delete_team(team_id):
     db.session.delete(team)
     db.session.commit()
     flash(f"Team '{team.name}' has been deleted.", "success")
-    # NEW: Clear selected team if it was the deleted one
+    # Clear selected team if it was the deleted one
     if 'selected_team_id' in session and session['selected_team_id'] == team_id:
         session.pop('selected_team_id')
     return redirect(url_for('game_bp.dashboard'))
@@ -114,21 +110,45 @@ def create_team():
         return redirect(url_for('game_bp.dashboard'))
     return render_template('create_team.html')
 
-# NEW: Route to view individual player details
+# Route to view individual player details
 @game_bp.route('/player/<int:player_id>')
 def player_page(player_id):
     if 'username' not in session:
         return redirect(url_for('auth_bp.login'))
 
     player = Player.query.get_or_404(player_id)
+    # Removed ownership check to allow public viewing
     user = User.query.filter_by(username=session['username']).first()
-    if player.team.user_id != user.id:
-        flash("You do not have permission to view this player.", "danger")
-        return redirect(url_for('game_bp.dashboard'))
+    is_owner = (player.team.user_id == user.id)
+    return render_template('player_page.html', player=player, is_owner=is_owner)
 
-    return render_template('player_page.html', player=player)
-
-# NEW: Stub route for coming soon features
+# Stub route for coming soon features
 @game_bp.route('/coming-soon')
 def coming_soon():
     return render_template('coming_soon.html')
+
+# NEW: Route for searching users and teams
+@game_bp.route('/search', methods=['GET', 'POST'])
+def search():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    query = ''
+    users = []
+    teams = []
+    if request.method == 'POST':
+        query = request.form.get('query', '')
+        if query:
+            users = User.query.filter(User.username.ilike(f'%{query}%')).all()
+            teams = Team.query.filter(Team.name.ilike(f'%{query}%')).all()
+    
+    return render_template('search.html', query=query, users=users, teams=teams)
+
+# NEW: Route for viewing user profile
+@game_bp.route('/user/<username>')
+def user_profile(username):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    profile_user = User.query.filter_by(username=username).first_or_404()
+    return render_template('user_profile.html', profile_user=profile_user)
