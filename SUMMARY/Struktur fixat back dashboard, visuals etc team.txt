@@ -1,0 +1,48 @@
+Directory Structure
+football_game_web/
+├── app/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── routes_auth.py
+│   ├── routes_game.py
+│   ├── database.db
+│   └── templates/
+│       ├── base.html
+│       ├── create_team.html
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       ├── register.html
+│       └── team_page.html
+├── .gitignore
+├── README.md
+├── requirements.txt
+└── run.py
+File Breakdown
+run.py: The main entry point to start the application. It imports and runs the app created by the app factory.
+
+app/: The main Python package containing all core application code.
+
+app/__init__.py: An "app factory" pattern. It contains the create_app function which initializes the Flask app, sets configuration (Secret Key, Database URI), initializes the SQLAlchemy db object, and registers the route blueprints.
+
+app/models.py: Defines the database schema using SQLAlchemy ORM classes.
+
+User: Stores user accounts with hashed passwords. Has a one-to-many relationship with Team.
+
+Team: Stores team information and is linked to a User. Has a one-to-many relationship with Player.
+
+Player: Stores player attributes (name, age, skill, etc.) and is linked to a Team.
+
+app/routes_auth.py: A Flask Blueprint for authentication. It handles all logic for /register, /login, and /logout routes, interacting with the User model and Flask's session.
+
+app/routes_game.py: A Flask Blueprint for core gameplay. It handles routes for the main homepage (/), the user dashboard (/dashboard), team creation (/create-team), team deletion, and viewing a specific team (/team/<id>). It also contains the logic for generating a starter squad.
+
+app/database.db: The SQLite database file where all user, team, and player data is stored.
+
+app/templates/: Contains all user-facing HTML files.
+
+base.html: The main site template, which all other pages inherit from. It includes Bootstrap, Bootstrap Icons, a navigation bar, and a background image.
+
+The other .html files are the specific pages for the dashboard, login, registration, etc., and they all extend base.html.
+
+requirements.txt: Lists all the Python packages the project depends on (e.g., Flask, Flask-SQLAlchemy).

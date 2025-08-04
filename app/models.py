@@ -1,3 +1,4 @@
+# app/models.py (unchanged, provided for completeness but no modifications needed)
 from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 import enum
@@ -26,7 +27,7 @@ class Team(db.Model):
     name = db.Column(db.String(100), unique=True, nullable=False)
     country = db.Column(db.String(50), nullable=False)
     # This line must NOT have unique=True
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) 
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     players = db.relationship('Player', backref='team', lazy=True, cascade="all, delete-orphan")
 
 class Player(db.Model):

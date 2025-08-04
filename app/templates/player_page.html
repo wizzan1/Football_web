@@ -1,0 +1,32 @@
+<!-- app/templates/player_page.html (unchanged, but included for completeness as it's part of the viewing feature) -->
+{% extends "base.html" %}
+{% block title %}{{ player.name }}{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">{{ player.name }} <small class="text-white-50">#{{ player.shirt_number }} - {{ player.position.value }}</small></h1>
+    </div>
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3 class="card-title mb-0">Player Details</h3>
+            <a href="{{ url_for('game_bp.team_page', team_id=player.team.id) }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> Back to Team
+            </a>
+        </div>
+        <dl class="row">
+            <dt class="col-sm-3">Age</dt>
+            <dd class="col-sm-9">{{ player.age }}</dd>
+            <dt class="col-sm-3">Position</dt>
+            <dd class="col-sm-9">{{ player.position.value }}</dd>
+            <dt class="col-sm-3">Skill</dt>
+            <dd class="col-sm-9">{{ player.skill }}</dd>
+            <dt class="col-sm-3">Potential (UV)</dt>
+            <dd class="col-sm-9">{{ player.potential }}</dd>
+            <dt class="col-sm-3">Shape</dt>
+            <dd class="col-sm-9">{{ player.shape }}%</dd>
+            <dt class="col-sm-3">Team</dt>
+            <dd class="col-sm-9">{{ player.team.name }} ({{ player.team.country }})</dd>
+        </dl>
+    </div>
+</div>
+{% endblock %}

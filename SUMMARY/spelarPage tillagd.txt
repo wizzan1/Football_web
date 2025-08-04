@@ -1,0 +1,55 @@
+Directory Structure
+football_game_web/
+├── app/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── routes_auth.py
+│   ├── routes_game.py
+│   ├── database.db
+│   └── templates/
+│       ├── add_player.html
+│       ├── base.html
+│       ├── create_team.html
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       ├── player_page.html
+│       ├── register.html
+│       └── team_page.html
+├── .gitignore
+├── README.md
+├── requirements.txt
+└── run.py
+File Breakdown
+run.py: The main entry point to start the application.
+
+app/: The main Python package containing all core application code.
+
+app/__init__.py: The app factory (create_app) that initializes Flask, configures the database and secret key, and registers route blueprints.
+
+app/models.py: Defines the database schema using SQLAlchemy ORM classes (User, Team, Player).
+
+app/routes_auth.py: A Blueprint for authentication, handling all logic for /register, /login, and /logout.
+
+app/routes_game.py: A Blueprint for gameplay. It handles the homepage, dashboard, team creation/deletion, and viewing a team. It now also includes routes to show a form for adding new players (/add-player) and to view individual player details (/player/<id>).
+
+app/database.db: The SQLite database file where all user, team, and player data is stored.
+
+app/templates/: Contains all user-facing HTML files.
+
+base.html: The main site template that all other pages inherit from.
+
+add_player.html: A new form for manually adding a player to a specific team.
+
+player_page.html: A new detail page that shows all the attributes for a single player.
+
+The other .html files are the specific pages for the dashboard, login, registration, etc.
+
+requirements.txt: Lists all the Python packages the project depends on.
+
+How to Run
+Install dependencies: pip install -r requirements.txt
+
+Create the database: flask shell, then run from app import db, models and db.create_all().
+
+Start the server: python run.py.
