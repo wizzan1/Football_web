@@ -1,14 +1,23 @@
 # Football Web Manager
 
-This is a web-based football management simulation game built with Python and Flask. The project features user registration and login backed by a SQLite database.
+A web-based football management simulation game built with Python and Flask. This project features a full user authentication system, a SQLite database for persistence, and allows users to create and manage multiple teams.
 
-## Technologies Used
+## Features ✨
+* Secure user registration and login system with password hashing.
+* Data is stored in a SQLite database using the Flask-SQLAlchemy ORM.
+* Users can create and own multiple teams (up to a maximum of 3).
+* Each new team is automatically generated with a unique starter squad of 20 players.
+* A central dashboard to view, manage, and delete all of a user's teams.
+* A detailed team page to view a squad list, sorted by position.
+* A professional, responsive UI built with Bootstrap 5.
+
+## Technologies Used 🛠️
 * **Backend:** Python
 * **Web Framework:** Flask
 * **Database:** SQLite with Flask-SQLAlchemy
-* **Frontend:** HTML & vanilla JavaScript
+* **Frontend:** HTML, Bootstrap 5, Jinja2
 
-## How to Run Locally
+## How to Run Locally 🚀
 
 1.  **Clone the repository:**
     ```bash
