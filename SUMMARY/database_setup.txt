@@ -1,0 +1,43 @@
+Project Structure & Summary
+The project now uses a SQLite database for user management, handled by the Flask-SQLAlchemy extension. The JSON file for users has been completely replaced.
+
+Directory Layout
+football_game_web/
+├── app/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── routes_auth.py
+│   ├── routes_game.py
+│   ├── database.db
+│   └── templates/
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       └── register.html
+└── run.py
+Component Descriptions
+run.py
+The main entry point that runs the application.
+
+app/
+The Python package containing all your core application source code.
+
+app/__init__.py
+Initializes the app package. It creates the Flask app, configures it (including the database URI and secret key), initializes the SQLAlchemy db object, and registers your route blueprints.
+
+
+app/models.py
+This new file defines the structure of your database tables as Python classes (Models). It currently contains the User model.
+
+app/routes_auth.py
+Handles all authentication routes. It now uses the User model and the db object to query the database instead of reading/writing to a JSON file.
+
+app/routes_game.py
+Handles core application pages like the homepage and the protected user dashboard.
+
+app/database.db
+This is your SQLite database file. It contains all your tables and data.
+
+app/templates/
+The folder containing all of your HTML templates for the user interface.
+
