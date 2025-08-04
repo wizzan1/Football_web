@@ -1,12 +1,18 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Welcome</title>
-</head>
-<body>
-    <h1>Welcome to Football Manager</h1>
-    <p>Please log in or register to continue.</p>
-    <a href="/login"><button>Login</button></a>
-    <a href="/register"><button>Register</button></a>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Welcome{% endblock %}
+
+{% block content %}
+<div class="p-5 mb-4 bg-light rounded-3 shadow-sm">
+    <div class="container-fluid py-5 text-center">
+        <h1 class="display-4 fw-bold">Welcome to Football Manager</h1>
+        <p class="fs-4 col-md-10 mx-auto">
+            The web-based football management simulation where you take your club from the bottom to the top. Register now to start your journey.
+        </p>
+        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center mt-5">
+            <a href="{{ url_for('auth_bp.login') }}" class="btn btn-primary btn-lg px-4 gap-3">Login</a>
+            <a href="{{ url_for('auth_bp.register') }}" class="btn btn-outline-secondary btn-lg px-4">Register</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
