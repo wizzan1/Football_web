@@ -1,8 +1,34 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 from app import db
-from .models import User, Team
+from .models import User, Team, Player, Position
+import random
 
 game_bp = Blueprint('game_bp', __name__)
+
+# Mock data for player generation
+FIRST_NAMES = ["Erik", "Lars", "Mikael", "Anders", "Johan", "Karl", "Fredrik"]
+LAST_NAMES = ["Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson"]
+
+def _generate_starter_squad(team):
+    """Creates 20 players and adds them to the database for the given team."""
+    positions = [Position.GOALKEEPER]*2 + [Position.DEFENDER]*7 + [Position.MIDFIELDER]*7 + [Position.FORWARD]*4
+    random.shuffle(positions)
+    
+    available_numbers = list(range(1, 21))
+    random.shuffle(available_numbers)
+
+    for i in range(20):
+        player = Player(
+            name=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
+            age=random.randint(18, 32),
+            position=positions[i],
+            skill=random.randint(20, 50),
+            potential=random.randint(60, 95), # UV
+            shape=random.randint(70, 100),
+            shirt_number=available_numbers.pop(),
+            team_id=team.id
+        )
+        db.session.add(player)
 
 @game_bp.route('/')
 def index():
@@ -15,9 +41,7 @@ def dashboard():
     if 'username' not in session:
         return redirect(url_for('auth_bp.login'))
     
-    # Get the user object from the database
     user = User.query.filter_by(username=session['username']).first()
-    # The user's team is now accessible via user.team
     return render_template('dashboard.html', user=user)
 
 @game_bp.route('/create-team', methods=['GET', 'POST'])
@@ -27,22 +51,26 @@ def create_team():
     
     user = User.query.filter_by(username=session['username']).first()
     if user.team:
-        # If user already has a team, redirect them to the dashboard
         return redirect(url_for('game_bp.dashboard'))
 
     if request.method == 'POST':
         team_name = request.form.get('name')
         country = request.form.get('country')
         
-        # Check if team name is already taken
         existing_team = Team.query.filter_by(name=team_name).first()
         if existing_team:
             flash('That team name is already taken.')
             return redirect(url_for('game_bp.create_team'))
         
-        # Create new team and link it to the current user
+        # 1. Create and save the team to get its ID
         new_team = Team(name=team_name, country=country, user_id=user.id)
         db.session.add(new_team)
+        db.session.commit()
+        
+        # 2. Now that the team has an ID, generate the players for it
+        _generate_starter_squad(new_team)
+        
+        # 3. Commit the new players to the database
         db.session.commit()
         
         return redirect(url_for('game_bp.dashboard'))

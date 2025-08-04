@@ -35,6 +35,19 @@
             padding: 20px;
             margin-bottom: 20px;
         }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        th {
+            background-color: #edf2f7;
+        }
         .logout-btn, .action-btn {
             display: inline-block;
             padding: 10px 20px;
@@ -60,20 +73,43 @@
         <main>
             <div class="widget">
                 {% if user.team %}
-                    <h2>{{ user.team.name }}</h2>
-                    <p><strong>Country:</strong> {{ user.team.country }}</p>
-                    {% else %}
+                    <h2>{{ user.team.name }} <small>({{ user.team.country }})</small></h2>
+                    
+                    <h3>Squad List</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Name</th>
+                                <th>Age</th>
+                                <th>Position</th>
+                                <th>Skill</th>
+                                <th>Potential (UV)</th>
+                                <th>Shape</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for player in user.team.players | sort(attribute='shirt_number') %}
+                            <tr>
+                                <td>{{ player.shirt_number }}</td>
+                                <td>{{ player.name }}</td>
+                                <td>{{ player.age }}</td>
+                                <td>{{ player.position.value }}</td>
+                                <td>{{ player.skill }}</td>
+                                <td>{{ player.potential }}</td>
+                                <td>{{ player.shape }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
+                {% else %}
                     <h2>Your Team</h2>
                     <p>You do not have a team yet. Found your club to get started!</p>
                     <a href="{{ url_for('game_bp.create_team') }}">
                         <button class="action-btn">Create Your Team</button>
                     </a>
                 {% endif %}
-            </div>
-
-            <div class="widget">
-                <h2>Game World News</h2>
-                <p>No news to report.</p>
             </div>
         </main>
         
