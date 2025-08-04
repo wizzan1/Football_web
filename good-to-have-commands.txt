@@ -3,3 +3,12 @@ git add .
 git commit -m "..." 
 
 git push origin main 
+
+
+
+
+skapa ny databas
+
+from app import db, models
+db.create_all()
+exit()
