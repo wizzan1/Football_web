@@ -1,4 +1,4 @@
-# app/routes_game.py (updated: removed add_player route)
+# app/routes_game.py (no changes needed, but provided for completeness without extra indents)
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 from app import db
 from .models import User, Team, Player, Position
@@ -55,6 +55,9 @@ def team_page(team_id):
         flash("You do not have permission to view this page.", "danger")
         return redirect(url_for('game_bp.dashboard'))
    
+    # NEW: Set the selected team in session
+    session['selected_team_id'] = team.id
+   
     # NEW: Custom sorting logic
     # Define the desired sort order for positions
     position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
@@ -77,6 +80,9 @@ def delete_team(team_id):
     db.session.delete(team)
     db.session.commit()
     flash(f"Team '{team.name}' has been deleted.", "success")
+    # NEW: Clear selected team if it was the deleted one
+    if 'selected_team_id' in session and session['selected_team_id'] == team_id:
+        session.pop('selected_team_id')
     return redirect(url_for('game_bp.dashboard'))
 
 @game_bp.route('/create-team', methods=['GET', 'POST'])
@@ -121,3 +127,8 @@ def player_page(player_id):
         return redirect(url_for('game_bp.dashboard'))
 
     return render_template('player_page.html', player=player)
+
+# NEW: Stub route for coming soon features
+@game_bp.route('/coming-soon')
+def coming_soon():
+    return render_template('coming_soon.html')

@@ -1,4 +1,4 @@
-# app/models.py (unchanged, provided for completeness but no modifications needed)
+# app/models.py (updated with new fields for league, division, season)
 from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 import enum
@@ -29,6 +29,10 @@ class Team(db.Model):
     # This line must NOT have unique=True
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     players = db.relationship('Player', backref='team', lazy=True, cascade="all, delete-orphan")
+    # NEW: Fields for league, division, season with defaults
+    league = db.Column(db.String(100), default="Xtreme League")
+    division = db.Column(db.String(50), default="Division 6:5")
+    season = db.Column(db.Integer, default=77)
 
 class Player(db.Model):
     id = db.Column(db.Integer, primary_key=True)

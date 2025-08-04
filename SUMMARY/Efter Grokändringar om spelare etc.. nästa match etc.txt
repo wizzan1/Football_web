@@ -1,0 +1,53 @@
+Directory Structure
+football_game_web/
+├── app/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── routes_auth.py
+│   ├── routes_game.py
+│   ├── database.db
+│   └── templates/
+│       ├── add_player.html
+│       ├── base.html
+│       ├── coming_soon.html
+│       ├── create_team.html
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       ├── player_page.html
+│       ├── register.html
+│       └── team_page.html
+├── .gitignore
+├── README.md
+├── requirements.txt
+└── run.py
+File Breakdown
+run.py: The main entry point to start the application.
+
+app/: The main Python package containing all core application code.
+
+app/__init__.py: The app factory (create_app) that initializes Flask, configures the database and secret key, and registers route blueprints.
+
+app/models.py: Defines the database schema. The Team model now includes fields for league, division, and season.
+
+app/routes_auth.py: A Blueprint for authentication, handling all logic for /register, /login, and /logout.
+
+app/routes_game.py: A Blueprint for gameplay. It handles the main user dashboard, team creation/deletion, and viewing individual players. The /team/<id> route now sets the "active team" in the user's session, creating a persistent context for management. It also includes a /coming-soon placeholder route.
+
+app/database.db: The SQLite database file where all user, team, and player data is stored.
+
+app/templates/: Contains all user-facing HTML files.
+
+base.html: The main site template. The navigation bar is now context-aware, displaying details of the currently selected team if one is active.
+
+dashboard.html: The main user dashboard, which now acts as a team selector with "Manage Team" buttons.
+
+team_page.html: The main team management hub. It features a sub-navigation menu (Squad, Matches, etc.) and a sidebar for upcoming match details.
+
+add_player.html: A form for manually adding a player to a team.
+
+player_page.html: A detail page for a single player.
+
+coming_soon.html: A placeholder page for features that are not yet implemented.
+
+requirements.txt: Lists all the Python packages the project depends on.

@@ -1,3 +1,4 @@
+<!-- app/templates/base.html (updated to use injected selected_team from context processor) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -26,6 +27,11 @@
                         <a class="nav-link active" href="{{ url_for('game_bp.dashboard') }}">Dashboard</a>
                     </li>
                 </ul>
+                {% if selected_team %}
+                    <span class="navbar-text me-3">
+                        Selected Team: {{ selected_team.name }} | Liga: {{ selected_team.league }} | Serie: {{ selected_team.division }} | Säsong {{ selected_team.season }}
+                    </span>
+                {% endif %}
                 {% if session.username %}
                 <span class="navbar-text me-3">
                     Welcome, {{ session.username }}
@@ -35,7 +41,6 @@
             </div>
         </div>
     </nav>
-
     <main class="container mt-4">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -47,10 +52,8 @@
                 {% endfor %}
             {% endif %}
         {% endwith %}
-
         {% block content %}{% endblock %}
     </main>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
