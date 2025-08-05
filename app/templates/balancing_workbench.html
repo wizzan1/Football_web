@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Simulation Sandbox & Balancing Workbench{% endblock %}
-
 {% block content %}
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-dark text-white">
@@ -17,11 +16,17 @@
             <div class="col-lg-4">
                 <div class="card h-100">
                     <div class="card-header">
-                        <strong>Your Team: {{ user_team.name }}</strong> (Starting 11)
+                        <strong>Your Team: {{ user_team.name }}</strong> (Full Squad)
                     </div>
-                    <div class="card-body overflow-auto" style="max-height: 60vh;">
+                    <div class="card-body overflow-auto" style="max-height: 70vh;">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="show-only-starting" checked>
+                            <label class="form-check-label small text-muted" for="show-only-starting">
+                                Show only starting players (highlighted are the fixed starting 11 used in calculations. Editing bench players won't affect the odds. Refresh the page to re-select the lineup.)
+                            </label>
+                        </div>
                         <form id="user-team-form">
-                            <table class="table table-sm small">
+                            <table class="table table-sm small" id="user-team-table">
                                 <thead>
                                     <tr>
                                         <th>Player</th>
@@ -31,17 +36,17 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {% for player in starting_11 %}
-                                    <tr>
+                                    {% for player in all_players %}
+                                    <tr {% if player.id in starting_11_ids %}class="table-active starting-player"{% else %}class="bench-player"{% endif %}>
                                         <td>{{ player.name }}</td>
                                         <td><span class="badge bg-secondary">{{ player.position.name[0] }}</span></td>
                                         <td>
-                                            <input type="number" class="form-control form-control-sm player-stat-input" 
+                                            <input type="number" class="form-control form-control-sm player-stat-input"
                                                    data-player-id="{{ player.id }}" data-stat-type="skill"
                                                    value="{{ player.skill }}" min="1" max="100">
                                         </td>
                                         <td>
-                                            <input type="number" class="form-control form-control-sm player-stat-input" 
+                                            <input type="number" class="form-control form-control-sm player-stat-input"
                                                    data-player-id="{{ player.id }}" data-stat-type="shape"
                                                    value="{{ player.shape }}" min="1" max="100">
                                         </td>
@@ -53,7 +58,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="col-lg-3">
                 <div class="card h-100">
                     <div class="card-header">
@@ -69,13 +73,12 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div id="enemy-team-panel" class="overflow-auto" style="max-height: 50vh;">
+                        <div id="enemy-team-panel" class="overflow-auto" style="max-height: 60vh;">
                             <p class="text-muted text-center mt-4">Select an opponent to see their lineup.</p>
                         </div>
                     </div>
                 </div>
             </div>
-
             <div class="col-lg-5">
                 <div class="card h-100">
                     <div class="card-header">
@@ -96,7 +99,6 @@
         {% endif %}
     </div>
 </div>
-
 <template id="analysis-template">
     <ul class="nav nav-pills nav-fill nav-sm mb-2" role="tablist">
         <li class="nav-item" role="presentation">
@@ -111,9 +113,7 @@
         <div class="tab-pane fade p-2 border rounded" id="pills-away" role="tabpanel"></div>
     </div>
 </template>
-
 {% endblock %}
-
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -123,19 +123,29 @@ document.addEventListener('DOMContentLoaded', function () {
     const enemyPanel = document.getElementById('enemy-team-panel');
     const loader = document.getElementById('loader');
     const analysisTemplate = document.getElementById('analysis-template');
-    
+    const showOnlyStartingCheckbox = document.getElementById('show-only-starting');
+   
     let debounceTimer;
-
     function handleInputChange() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(updateWorkbench, 500); // Debounce to avoid too many requests
     }
-
     enemySelect.addEventListener('change', updateWorkbench);
     statInputs.forEach(input => {
         input.addEventListener('input', handleInputChange);
     });
-
+   
+    // Toggle visibility of bench players
+    showOnlyStartingCheckbox.addEventListener('change', function () {
+        const benchRows = document.querySelectorAll('#user-team-table .bench-player');
+        benchRows.forEach(row => {
+            row.style.display = this.checked ? 'none' : '';
+        });
+    });
+   
+    // Initial toggle on load (checkbox is checked by default)
+    showOnlyStartingCheckbox.dispatchEvent(new Event('change'));
+   
     async function updateWorkbench() {
         const enemyTeamId = enemySelect.value;
         if (!enemyTeamId) {
@@ -143,17 +153,14 @@ document.addEventListener('DOMContentLoaded', function () {
             enemyPanel.innerHTML = '<p class="text-muted text-center mt-4">Select an opponent to see their lineup.</p>';
             return;
         }
-
         resultsPanel.innerHTML = '';
         loader.classList.remove('d-none');
         resultsPanel.appendChild(loader);
-
         const userTeamPlayers = [];
         const playerIds = new Set();
         document.querySelectorAll('.player-stat-input[data-player-id]').forEach(input => {
             playerIds.add(input.dataset.playerId);
         });
-
         playerIds.forEach(id => {
             const skillInput = document.querySelector(`.player-stat-input[data-player-id='${id}'][data-stat-type='skill']`);
             const shapeInput = document.querySelector(`.player-stat-input[data-player-id='${id}'][data-stat-type='shape']`);
@@ -163,7 +170,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 shape: parseInt(shapeInput.value, 10) || 50
             });
         });
-
         try {
             const response = await fetch("{{ url_for('game_bp.recalculate_odds') }}", {
                 method: 'POST',
@@ -176,29 +182,25 @@ document.addEventListener('DOMContentLoaded', function () {
                     user_team_players: userTeamPlayers
                 })
             });
-
             loader.classList.add('d-none');
-            
+           
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Server responded with an error');
             }
-            
+           
             const data = await response.json();
             if (data.error) {
                  throw new Error(data.error);
             }
-
             renderEnemyPanel(data.home_fixture.stats.enemy_team);
             renderResultsPanel(data);
-
         } catch (error) {
             loader.classList.add('d-none');
             resultsPanel.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
             console.error('Error recalculating odds:', error);
         }
     }
-
     function renderEnemyPanel(enemyTeamStats) {
         let html = '<table class="table table-sm small"><thead><tr><th>Player</th><th>Pos</th><th class="text-center">Skill</th><th class="text-center">Shape</th></tr></thead><tbody>';
         enemyTeamStats.lineup.forEach(p => {
@@ -212,29 +214,25 @@ document.addEventListener('DOMContentLoaded', function () {
         html += '</tbody></table>';
         enemyPanel.innerHTML = html;
     }
-
     function renderResultsPanel(data) {
         const clone = analysisTemplate.content.cloneNode(true);
         const homePane = clone.querySelector('#pills-home');
         const awayPane = clone.querySelector('#pills-away');
-        
+       
         // Home Fixture
         homePane.innerHTML = generateFixtureHtml(data.home_fixture, data.home_fixture.stats.user_team.name, data.home_fixture.stats.enemy_team.name, true);
-
         // Away Fixture (Note: User win prob is enemy's loss prob from API)
         awayPane.innerHTML = generateFixtureHtml(data.away_fixture, data.away_fixture.stats.user_team.name, data.away_fixture.stats.enemy_team.name, false);
-
         resultsPanel.innerHTML = '';
         resultsPanel.appendChild(clone);
     }
-    
+   
     function generateFixtureHtml(fixtureData, userTeamName, enemyTeamName, isHomeFixture) {
         const userStats = fixtureData.stats.user_team;
         const enemyStats = fixtureData.stats.enemy_team;
         const probs = fixtureData.probs;
-        
+       
         let winProb, lossProb, drawProb, avgFor, avgAgainst;
-
         if (isHomeFixture) {
             winProb = probs.win_prob;
             drawProb = probs.draw_prob;
@@ -243,13 +241,12 @@ document.addEventListener('DOMContentLoaded', function () {
             avgAgainst = probs.avg_goals_against;
         } else {
             // For away fixture, user win is loss_prob from API, user loss is win_prob from API
-            winProb = probs.loss_prob; 
+            winProb = probs.loss_prob;
             drawProb = probs.draw_prob;
             lossProb = probs.win_prob;
             avgFor = probs.avg_goals_against;
             avgAgainst = probs.avg_goals_for;
         }
-
         const taleOfTheTape = `
             <table class="table table-sm table-bordered text-center small mb-2">
                 <thead class="table-light">
@@ -273,7 +270,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 </tbody>
             </table>
         `;
-        
+       
         const progressBar = `
             <div class="progress" style="height: 20px; font-size: 0.75rem; font-weight: bold;">
                 <div class="progress-bar bg-success" style="width: ${winProb}%"><span>${winProb.toFixed(1)}%</span></div>
@@ -287,10 +284,8 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
             <p class="small mt-2 text-center mb-0">Avg Goals: <strong>${avgFor.toFixed(2)}</strong> - <strong>${avgAgainst.toFixed(2)}</strong></p>
         `;
-
         return taleOfTheTape + progressBar;
     }
-
 });
 </script>
 {% endblock %}
