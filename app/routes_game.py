@@ -19,11 +19,16 @@ def _generate_starter_squad(team):
     available_numbers = list(range(1, 21))
     random.shuffle(available_numbers)
     for i in range(20):
+        skill = random.randint(30, 70)
+        # NEW: Generate Free Kick ability: Correlated with skill but with high variance
+        fk_ability = max(10, min(99, skill + random.randint(-15, 30)))
+
         player = Player(
             name=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
             age=random.randint(18, 32),
             position=positions[i],
-            skill=random.randint(30, 70),
+            skill=skill,
+            free_kick_ability=fk_ability, # Initialize new attribute
             potential=random.randint(60, 95),
             shape=random.randint(70, 100),
             shirt_number=available_numbers.pop(),
@@ -58,6 +63,7 @@ def team_page(team_id):
         session['selected_team_id'] = team.id
     position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
     sorted_players = sorted(team.players, key=lambda p: (position_order[p.position], p.shirt_number))
+    # Note: The user must update team_page.html to display the new FK attribute.
     return render_template('team_page.html', team=team, players=sorted_players, is_owner=is_owner)
 
 
@@ -109,6 +115,7 @@ def player_page(player_id):
     player = Player.query.get_or_404(player_id)
     user = User.query.filter_by(username=session['username']).first()
     is_owner = (player.team.user_id == user.id)
+    # Note: The user must update player_page.html to display the new FK attribute.
     return render_template('player_page.html', player=player, is_owner=is_owner)
 
 
@@ -294,6 +301,7 @@ def workbench():
     starting_11_ids = set(session['workbench_fixed_lineup_ids'])
     all_other_teams = Team.query.filter(Team.id != user_team_id).order_by(Team.name).all()
 
+    # Note: The user must update balancing_workbench.html to allow editing the new 'free_kick_ability'.
     return render_template('balancing_workbench.html',
                            user_team=user_team,
                            all_players=all_players,
@@ -319,12 +327,20 @@ def recalculate_odds():
     if not user_team_model or not enemy_team_model:
         return jsonify({'error': 'Invalid team ID provided'}), 404
 
-    modified_stats = {int(p['id']): {'skill': int(p['skill']), 'shape': int(p['shape'])} for p in data['user_team_players']}
+    # Update modified_stats to include the new attribute
+    modified_stats = {
+        int(p['id']): {
+            'skill': int(p['skill']),
+            'shape': int(p['shape']),
+            'free_kick_ability': int(p.get('free_kick_ability', 50)) # Handle FK ability
+        } for p in data['user_team_players']
+    }
 
     for player in user_team_model.players:
         if player.id in modified_stats:
             player.skill = modified_stats[player.id]['skill']
             player.shape = modified_stats[player.id]['shape']
+            player.free_kick_ability = modified_stats[player.id]['free_kick_ability']
 
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
     odds = get_prematch_odds(user_team_model=user_team_model, enemy_team_model=enemy_team_model, fixed_user_lineup_ids=fixed_lineup_ids)
@@ -358,12 +374,19 @@ def batch_odds():
     if not user_team_model or not enemy_team_model:
         return jsonify({'error': 'Invalid team ID provided'}), 404
 
-    # Apply temporary edits (in-memory only)
-    modified_stats = {int(p['id']): {'skill': int(p['skill']), 'shape': int(p['shape'])} for p in data['user_team_players']}
+    # Apply temporary edits (in-memory only) - Updated for FK ability
+    modified_stats = {
+        int(p['id']): {
+            'skill': int(p['skill']),
+            'shape': int(p['shape']),
+            'free_kick_ability': int(p.get('free_kick_ability', 50)) # Handle FK ability
+        } for p in data['user_team_players']
+    }
     for player in user_team_model.players:
         if player.id in modified_stats:
             player.skill = modified_stats[player.id]['skill']
             player.shape = modified_stats[player.id]['shape']
+            player.free_kick_ability = modified_stats[player.id]['free_kick_ability']
 
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
 

@@ -1,7 +1,7 @@
 from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 import enum
-# We must use the standard library datetime here for database timestamps, 
+# We must use the standard library datetime here for database timestamps,
 # as the environment might override 'datetime' for simulation purposes.
 import datetime as std_datetime
 
@@ -41,23 +41,28 @@ class Player(db.Model):
     age = db.Column(db.Integer, nullable=False)
     position = db.Column(db.Enum(Position), nullable=False)
     skill = db.Column(db.Integer, nullable=False)
+    # NEW: Attribute specific for set pieces (1-99)
+    free_kick_ability = db.Column(db.Integer, nullable=False, default=50)
     potential = db.Column(db.Integer, nullable=False)
     shape = db.Column(db.Integer, nullable=False)
     shirt_number = db.Column(db.Integer, nullable=False)
     team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
 
-    # --- New Helper Method for Simulation ---
+    # --- Helper Methods for Simulation ---
     @property
     def effective_skill(self):
         # Skill is modified by current shape (stamina/fitness).
-        # OLD: return self.skill * (0.5 + (self.shape / 200.0))
-        # In the old model, 0 shape = 50% skill.
-
-        # NEW Model: More punitive. 0 shape = 30% skill, 100 shape = 100% skill.
-        # This makes fitness management and squad rotation crucial.
+        # Model: 0 shape = 30% skill, 100 shape = 100% skill.
         # Calculation: Base (0.3) + Variable (Shape/100 * 0.7)
         shape_multiplier = 0.3 + (self.shape * 0.7 / 100.0)
         return self.skill * shape_multiplier
+
+    @property
+    def effective_fk_ability(self):
+        # NEW: Free kick ability is also affected by shape, but slightly less so than open play skill.
+        # Model: 0 shape = 50% FK ability, 100 shape = 100% FK ability.
+        shape_multiplier = 0.5 + (self.shape * 0.5 / 100.0)
+        return self.free_kick_ability * shape_multiplier
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
