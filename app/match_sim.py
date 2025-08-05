@@ -1,7 +1,7 @@
 # app/match_sim.py
 import random
 import math
-from app import db
+# Note: We rely on the models having access to the DB context (e.g., Team.query.get)
 from .models import Team, Player, Position
 
 # ===========================
@@ -17,65 +17,59 @@ FORMATION = {
 }
 
 # Home advantage multiplier
-# Previous: 1.01
-# CHANGE: Increased to 1.06 (6%). Provides a noticeable and realistic home field effect.
-HOME_ADVANTAGE_BOOST = 1.03
+# OLD: 1.01 (Negligible)
+# NEW: 1.06 (A meaningful 6% boost)
+HOME_ADVANTAGE_BOOST = 1.04
 
 # ----- Flow & scoring (non-GK specific) ---------------------------------------
+# We increase scaling factors (from 22) to flatten the sensitivity curve.
 
-# Used in resolve_midfield_battle()
-# Previous: 22
-# CHANGE: Increased to 30. This flattens the curve, significantly reducing the sensitivity to small skill gaps.
-MIDFIELD_SCALING = 30
+# MIDFIELD_SCALING controls how often play advances.
+MIDFIELD_SCALING = 32
 
-# Used in resolve_attack()
-# Previous: 22
-# CHANGE: Increased to 30, mirroring the midfield change.
-ATTACK_SCALING = 30
+# ATTACK_SCALING controls how often an attack turns into a shot opportunity.
+ATTACK_SCALING = 32
 
-# Legacy global shot scaling (kept for reference).
+# Legacy global shot scaling.
 SHOT_SCALING = 24
 
-# Global conversion multiplier applied to the base per-shot probability.
-# Previous: 0.97
-# CHANGE: Increased to 1.00. This counteracts the goal reduction caused by increasing the SCALING factors, keeping GPG realistic.
+# Global conversion multiplier.
+# OLD: 0.97
+# NEW: 1.00 (Set to 1.0 to help reach the target goal average, compensating for higher scaling)
 GOAL_CONVERSION_FACTOR = 1.00
 
 # -------------------------------
 # Goalkeeper-specific tuning knobs
 # -------------------------------
 
-# 1) GK contribution to defensive gate during chance creation (resolve_attack).
-# Kept the same. This value seems reasonable.
+# 1) GK contribution to defensive gate during chance creation.
 DEF_GK_BLEND = 0.18
 
-# 2) Dedicated GK scaling for shots (resolve_shot).
-# Previous: 22
-# CHANGE: Increased to 28. Slightly lower than MID/ATTACK scaling, ensuring that 1v1 quality still has a strong impact.
-GK_SHOT_SCALING = 28
+# 2) Dedicated GK scaling for shots.
+# OLD: 22
+# NEW: 30 (Increased to flatten the curve, but slightly less than Mid/Att)
+GK_SHOT_SCALING = 30
 
-# Shooter per-shot variance.
-# Kept the same. Provides good variance.
+# Shooter per-shot variance. (Kept as is, ±15%)
 SHOOTER_NOISE_MIN = 0.85
 SHOOTER_NOISE_MAX = 1.15
 
-# GK per-shot variance.
-# Kept the same. Keeps GKs relatively reliable.
+# GK per-shot variance. (Kept as is, ±8%)
 GK_NOISE_MIN = 0.92
 GK_NOISE_MAX = 1.08
 
 
 def logistic_probability(strength_a, strength_b, scaling_factor):
-    # Applying noise (variance) before the calculation.
-    # Previous Noise: 0.85 - 1.15
-    # CHANGE: Increased noise to 0.80 - 1.20. This adds more unpredictability to zonal battles (the "fun factor").
-    rand_a = strength_a * random.uniform(0.80, 1.20)
-    rand_b = strength_b * random.uniform(0.80, 1.20)
-    diff = rand_a - rand_b
+    """
+    Calculates the probability of A overcoming B using a logistic function.
+    CRITICAL CHANGE: Removed internal randomization (noise).
+    """
+    # rand_a = strength_a * random.uniform(0.85, 1.15) # REMOVED
+    # rand_b = strength_b * random.uniform(0.85, 1.15) # REMOVED
+    diff = strength_a - strength_b
     try:
-        # Calculate the exponent
+        # Clamping the exponent to prevent extreme values and overflow errors
         exponent = -diff / scaling_factor
-        # Clamping the exponent input for numerical stability
         if exponent > 10:
             return 0.0
         elif exponent < -10:
@@ -83,17 +77,19 @@ def logistic_probability(strength_a, strength_b, scaling_factor):
         else:
             return 1 / (1 + math.exp(exponent))
     except OverflowError:
+        # Safeguard
         return 1.0 if diff > 0 else 0.0
 
 
 def goal_probability(shooter_eff: float, keeper_eff: float) -> float:
     """
-    Shooter vs GK probability model with GK-specific noise and scaling,
-    then multiplied by the global GOAL_CONVERSION_FACTOR.
+    Shooter vs GK probability model. We KEEP the noise here as it represents
+    individual variance in a high-stakes moment (the shot).
     """
     rand_shooter = shooter_eff * random.uniform(SHOOTER_NOISE_MIN, SHOOTER_NOISE_MAX)
     rand_keeper = keeper_eff * random.uniform(GK_NOISE_MIN, GK_NOISE_MAX)
     diff = rand_shooter - rand_keeper
+
     try:
         exponent = -diff / GK_SHOT_SCALING
         if exponent > 10:
@@ -105,27 +101,24 @@ def goal_probability(shooter_eff: float, keeper_eff: float) -> float:
     except OverflowError:
         base = 1.0 if diff > 0 else 0.0
 
-    # Apply the final conversion factor, ensuring it doesn't exceed 1.0
-    return min(base * GOAL_CONVERSION_FACTOR, 1.0)
+    # Ensure probability doesn't exceed 1.0
+    return min(1.0, base * GOAL_CONVERSION_FACTOR)
 
+
+# === MatchTeam Class (Included for completeness, minor change to default strength) ===
 
 class MatchTeam:
-    # (MatchTeam remains the same, utilizing the updated constants)
     def __init__(self, team_model, is_home=False, fixed_lineup_ids=None):
         self.team = team_model
         self.is_home = is_home
         self.fixed_lineup_ids = fixed_lineup_ids
-
         self.lineup = {}
         self.base_zonal_strength = {}
         self.zonal_strength = {}
-
         self.avg_shape = 0
         self.avg_base_skill = 0
         self.avg_effective_skill = 0
-
         self.score = 0
-
         self.select_lineup()
         self.calculate_zonal_strength()
 
@@ -139,6 +132,7 @@ class MatchTeam:
             for p in fixed_players:
                 self.lineup[p.position].append(p)
         else:
+            # This now uses the updated effective_skill calculation from models.py
             sorted_players = sorted(self.team.players, key=lambda p: p.effective_skill, reverse=True)
             self.lineup = {pos: [] for pos in Position}
             squad_count = 0
@@ -161,7 +155,9 @@ class MatchTeam:
     def calculate_zonal_strength(self):
         for pos in Position:
             players = self.lineup.get(pos, [])
-            base_strength = sum(p.effective_skill for p in players) / len(players) if players else 10
+            # OLD default: 10
+            # NEW default: 20 (A more reasonable baseline if a zone is somehow empty)
+            base_strength = sum(p.effective_skill for p in players) / len(players) if players else 20
             self.base_zonal_strength[pos] = base_strength
             self.zonal_strength[pos] = base_strength * HOME_ADVANTAGE_BOOST if self.is_home else base_strength
 
@@ -182,6 +178,7 @@ class MatchTeam:
             'lineup': [{'name': p.name, 'position': p.position.value, 'skill': p.skill, 'shape': p.shape, 'id': p.id} for p in self.get_starting_11()]
         }
 
+# === MatchSimulator Class (Includes improved logging to show new constants) ===
 
 class MatchSimulator:
     def __init__(self, team_a_model, team_b_model, logging_enabled=True, fixed_a_ids=None, fixed_b_ids=None):
@@ -207,8 +204,8 @@ class MatchSimulator:
             self.log_event("Kickoff!", importance='info')
 
         while self.minute < 90:
-            # The pacing (1-5 minutes) seems fine.
-            time_increment = random.randint(1, 5)
+            # Increased time increment slightly (1-5) -> (1-6) for slightly more variance
+            time_increment = random.randint(1, 6)
             last_minute = self.minute
             self.minute += time_increment
             if self.minute > 90:
@@ -236,6 +233,8 @@ class MatchSimulator:
         attacker, defender = (self.possession, self.team_b) if self.possession == self.team_a else (self.possession, self.team_a)
         att_str = attacker.zonal_strength[Position.MIDFIELDER]
         def_str = defender.zonal_strength[Position.MIDFIELDER]
+
+        # Uses the updated logistic_probability (no noise) and new MIDFIELD_SCALING
         prob = logistic_probability(att_str, def_str, MIDFIELD_SCALING)
         roll = random.random()
 
@@ -247,12 +246,11 @@ class MatchSimulator:
             result_text = "Fail"
 
         if self.logging_enabled:
-            # Updated logging format to clearly show the boost factor (e.g., 1.06)
-            boost_str = f"{HOME_ADVANTAGE_BOOST:.2f}"
-            att_d = f"{attacker.base_zonal_strength[Position.MIDFIELDER]:.1f} * {boost_str} (H) -> {att_str:.1f}" if attacker.is_home else f"{att_str:.1f}"
-            def_d = f"{defender.base_zonal_strength[Position.MIDFIELDER]:.1f} * {boost_str} (H) -> {def_str:.1f}" if defender.is_home else f"{def_str:.1f}"
+            # Improved logging to show the actual boost factor used and the scaling factor
+            att_d = f"{attacker.base_zonal_strength[Position.MIDFIELDER]:.1f} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {att_str:.1f}" if attacker.is_home else f"{att_str:.1f}"
+            def_d = f"{defender.base_zonal_strength[Position.MIDFIELDER]:.1f} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {def_str:.1f}" if defender.is_home else f"{def_str:.1f}"
             details = (
-                f"Midfield (Scaling: {MIDFIELD_SCALING}): {attacker.team.name} vs {defender.team.name}\n"
+                f"Midfield (Scale: {MIDFIELD_SCALING}): {attacker.team.name} vs {defender.team.name}\n"
                 f"- Att Str: {att_d}\n"
                 f"- Def Str: {def_d}\n"
                 f"- Prob to Advance: {prob:.1%}\n"
@@ -264,58 +262,42 @@ class MatchSimulator:
     def resolve_attack(self, attacker, defender):
         att_str = attacker.zonal_strength[Position.FORWARD]
 
-        # Blend GK into defensive gate for chance creation
         pure_def = defender.zonal_strength[Position.DEFENDER]
         gk_str = defender.zonal_strength[Position.GOALKEEPER]
         def_gate = (1.0 - DEF_GK_BLEND) * pure_def + DEF_GK_BLEND * gk_str
 
+        # Uses the updated logistic_probability (no noise) and new ATTACK_SCALING
         prob = logistic_probability(att_str, def_gate, ATTACK_SCALING)
         roll = random.random()
 
-        # Updated logging format
-        boost_str = f"{HOME_ADVANTAGE_BOOST:.2f}"
+        # Helper to format logging details (DRY principle)
+        def get_attack_details(success):
+            att_d = f"{attacker.base_zonal_strength[Position.FORWARD]:.1f} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {att_str:.1f}" if attacker.is_home else f"{att_str:.1f}"
+            def_base = f"{defender.base_zonal_strength[Position.DEFENDER]:.1f}"
+            gk_base = f"{defender.base_zonal_strength[Position.GOALKEEPER]:.1f}"
+            if defender.is_home:
+                def_d = f"{def_base} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {pure_def:.1f}"
+                gk_d = f"{gk_base} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {gk_str:.1f}"
+            else:
+                def_d = f"{pure_def:.1f}"
+                gk_d = f"{gk_str:.1f}"
+            return (
+                f"Attack (Scale: {ATTACK_SCALING}): {attacker.team.name} vs {defender.team.name}\n"
+                f"- Att Fwd: {att_d}\n"
+                f"- Def Gate: DEF {def_d} + GK {gk_d} (blend {DEF_GK_BLEND:.0%}) -> {def_gate:.1f}\n"
+                f"- Prob to Create Chance: {prob:.1%}\n"
+                f"- Roll: {roll:.3f} -> {'Success' if success else 'Fail'}"
+            )
 
         if roll < prob:
             if self.logging_enabled:
-                att_d = f"{attacker.base_zonal_strength[Position.FORWARD]:.1f} * {boost_str} (H) -> {att_str:.1f}" if attacker.is_home else f"{att_str:.1f}"
-                def_base = f"{defender.base_zonal_strength[Position.DEFENDER]:.1f}"
-                gk_base = f"{defender.base_zonal_strength[Position.GOALKEEPER]:.1f}"
-                if defender.is_home:
-                    def_d = f"{def_base} * {boost_str} (H) -> {pure_def:.1f}"
-                    gk_d = f"{gk_base} * {boost_str} (H) -> {gk_str:.1f}"
-                else:
-                    def_d = f"{pure_def:.1f}"
-                    gk_d = f"{gk_str:.1f}"
-                details = (
-                    f"Attack (Scaling: {ATTACK_SCALING}): {attacker.team.name} vs {defender.team.name}\n"
-                    f"- Att Fwd: {att_d}\n"
-                    f"- Def Gate: DEF {def_d} + GK {gk_d} (blend {DEF_GK_BLEND:.0%}) -> {def_gate:.1f}\n"
-                    f"- Prob to Create Chance: {prob:.1%}\n"
-                    f"- Roll: {roll:.3f} -> Success"
-                )
-                self.log_event(f"{attacker.team.name} creates a chance!", event_type='SHOT_OPPORTUNITY', details=details)
+                self.log_event(f"{attacker.team.name} creates a chance!", event_type='SHOT_OPPORTUNITY', details=get_attack_details(True))
             self.resolve_shot(attacker, defender)
         else:
             self.possession = defender
             self.zone = 'M'
             if self.logging_enabled:
-                att_d = f"{attacker.base_zonal_strength[Position.FORWARD]:.1f} * {boost_str} (H) -> {att_str:.1f}" if attacker.is_home else f"{att_str:.1f}"
-                def_base = f"{defender.base_zonal_strength[Position.DEFENDER]:.1f}"
-                gk_base = f"{defender.base_zonal_strength[Position.GOALKEEPER]:.1f}"
-                if defender.is_home:
-                    def_d = f"{def_base} * {boost_str} (H) -> {pure_def:.1f}"
-                    gk_d = f"{gk_base} * {boost_str} (H) -> {gk_str:.1f}"
-                else:
-                    def_d = f"{pure_def:.1f}"
-                    gk_d = f"{gk_str:.1f}"
-                details = (
-                    f"Attack (Scaling: {ATTACK_SCALING}): {attacker.team.name} vs {defender.team.name}\n"
-                    f"- Att Fwd: {att_d}\n"
-                    f"- Def Gate: DEF {def_d} + GK {gk_d} (blend {DEF_GK_BLEND:.0%}) -> {def_gate:.1f}\n"
-                    f"- Prob to Create Chance: {prob:.1%}\n"
-                    f"- Roll: {roll:.3f} -> Fail"
-                )
-                self.log_event(f"{defender.team.name}'s defense holds firm.", event_type='DEFENSIVE_STOP', details=details)
+                self.log_event(f"{defender.team.name}'s defense holds firm.", event_type='DEFENSIVE_STOP', details=get_attack_details(False))
 
     def resolve_shot(self, attacker, defender):
         shooter = attacker.get_random_player([Position.FORWARD, Position.MIDFIELDER])
@@ -325,6 +307,7 @@ class MatchSimulator:
             self.zone = 'M'
             return
 
+        # Uses the updated goal_probability (with noise) and new GK_SHOT_SCALING/GOAL_CONVERSION_FACTOR
         prob = goal_probability(shooter.effective_skill, goalkeeper.effective_skill)
         roll = random.random()
 
@@ -333,8 +316,8 @@ class MatchSimulator:
             if self.logging_enabled:
                 details = (
                     f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n"
-                    f"- GK Scaling: {GK_SHOT_SCALING} | Conversion Factor: {GOAL_CONVERSION_FACTOR:.2f}\n"
-                    f"- Final Goal Prob: {prob:.1%}\n"
+                    f"- GK Scaling: {GK_SHOT_SCALING}, Conv Factor: {GOAL_CONVERSION_FACTOR:.2f}\n"
+                    f"- Goal Prob: {prob:.1%}\n"
                     f"- Roll: {roll:.3f} -> GOAL"
                 )
                 score_line = f"({self.team_a.score}-{self.team_b.score})"
@@ -343,8 +326,8 @@ class MatchSimulator:
             if self.logging_enabled:
                 details = (
                     f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n"
-                    f"- GK Scaling: {GK_SHOT_SCALING} | Conversion Factor: {GOAL_CONVERSION_FACTOR:.2f}\n"
-                    f"- Final Goal Prob: {prob:.1%}\n"
+                    f"- GK Scaling: {GK_SHOT_SCALING}, Conv Factor: {GOAL_CONVERSION_FACTOR:.2f}\n"
+                    f"- Goal Prob: {prob:.1%}\n"
                     f"- Roll: {roll:.3f} -> NO GOAL"
                 )
                 self.log_event(f"NO GOAL! Shot by {shooter.name}.", importance='miss', event_type='MISS', details=details)
@@ -362,7 +345,11 @@ class MatchSimulator:
         }
 
 
+# === Helper Functions (Included for completeness) ===
+# These functions rely on database access (Team.query.get).
+
 def simulate_match(team_a_id, team_b_id):
+    # Assuming Team.query works here (requires active app context)
     team_a, team_b = Team.query.get(team_a_id), Team.query.get(team_b_id)
     if not team_a or not team_b:
         return {'log': [{'message': 'Invalid Teams'}], 'score_a': 0, 'score_b': 0, 'team_a_name': '?', 'team_b_name': '?'}
@@ -370,13 +357,15 @@ def simulate_match(team_a_id, team_b_id):
 
 
 def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, user_team_model=None, enemy_team_model=None, fixed_user_lineup_ids=None):
-    if not user_team_model:
+    if not user_team_model and user_team_id:
         user_team_model = Team.query.get(user_team_id)
-    if not enemy_team_model:
+    if not enemy_team_model and enemy_team_id:
         enemy_team_model = Team.query.get(enemy_team_id)
+
     if not user_team_model or not enemy_team_model:
         return {'error': 'Invalid teams'}
 
+    # Calculate MatchTeam stats once
     user_team_home = MatchTeam(user_team_model, is_home=True, fixed_lineup_ids=fixed_user_lineup_ids)
     user_team_away = MatchTeam(user_team_model, is_home=False, fixed_lineup_ids=fixed_user_lineup_ids)
     enemy_team_home = MatchTeam(enemy_team_model, is_home=True)
@@ -385,6 +374,7 @@ def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, us
     def _run_fixture_sims(home_team_model, away_team_model, fixed_home_ids=None, fixed_away_ids=None):
         wins, draws, losses, goals_for, goals_against = 0, 0, 0, 0, 0
         for _ in range(simulations):
+            # The simulator will now use the updated logic and constants
             simulator = MatchSimulator(home_team_model, away_team_model, logging_enabled=False, fixed_a_ids=fixed_home_ids, fixed_b_ids=fixed_away_ids)
             result = simulator.simulate()
             goals_for += result['score_a']

@@ -1,7 +1,9 @@
 from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 import enum
-from datetime import datetime
+# We must use the standard library datetime here for database timestamps, 
+# as the environment might override 'datetime' for simulation purposes.
+import datetime as std_datetime
 
 class Position(enum.Enum):
     GOALKEEPER = "Goalkeeper"
@@ -48,8 +50,14 @@ class Player(db.Model):
     @property
     def effective_skill(self):
         # Skill is modified by current shape (stamina/fitness).
-        # 100 shape = 100% skill. 0 shape = 50% skill.
-        return self.skill * (0.5 + (self.shape / 200.0))
+        # OLD: return self.skill * (0.5 + (self.shape / 200.0))
+        # In the old model, 0 shape = 50% skill.
+
+        # NEW Model: More punitive. 0 shape = 30% skill, 100 shape = 100% skill.
+        # This makes fitness management and squad rotation crucial.
+        # Calculation: Base (0.3) + Variable (Shape/100 * 0.7)
+        shape_multiplier = 0.3 + (self.shape * 0.7 / 100.0)
+        return self.skill * shape_multiplier
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -57,7 +65,8 @@ class Message(db.Model):
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     subject = db.Column(db.String(200), nullable=False)
     body = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    # Ensure standard UTC time for database records
+    timestamp = db.Column(db.DateTime, default=std_datetime.datetime.utcnow)
     is_read = db.Column(db.Boolean, default=False)
     challenger_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
     challenged_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
