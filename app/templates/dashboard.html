@@ -1,4 +1,4 @@
-<!-- app/templates/dashboard.html (updated for more structured team list) -->
+<!-- app/templates/dashboard.html (add Simulate button) -->
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
@@ -10,12 +10,12 @@
     <div class="col-md-8">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h2 class="h4 mb-0">Your Teams ({{ user.teams|length }} / {{ max_teams }})</h2>
-           
-            {% if user.teams|length < max_teams %}
-            <a href="{{ url_for('game_bp.create_team') }}" class="btn btn-primary">
-                Create New Team
-            </a>
-            {% endif %}
+            <div>
+                {% if user.teams|length < max_teams %}
+                <a href="{{ url_for('game_bp.create_team') }}" class="btn btn-primary me-2">Create New Team</a>
+                {% endif %}
+                <a href="{{ url_for('game_bp.simulate') }}" class="btn btn-warning">Simulate Enemies</a>  <!-- NEW button -->
+            </div>
         </div>
         <div class="card shadow-sm">
             <div class="card-body">

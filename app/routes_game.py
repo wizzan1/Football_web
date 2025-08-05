@@ -1,9 +1,10 @@
-# app/routes_game.py (updated with fix for accept_challenge)
+# app/routes_game.py (updated for multi-sim on challenge)
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 from app import db
 from .models import User, Team, Player, Position, Message
 import random
 from datetime import datetime
+from .match_sim import simulate_match  # Import the sim function
 
 game_bp = Blueprint('game_bp', __name__)
 
@@ -156,35 +157,26 @@ def challenge_team(team_id):
         flash("You cannot challenge your own team.", "danger")
         return redirect(url_for('game_bp.team_page', team_id=team_id))
     
-    # Assume the challenger selects one of their teams; for simplicity, use selected_team if available
     if 'selected_team_id' not in session:
         flash("Select one of your teams first to challenge with.", "warning")
         return redirect(url_for('game_bp.dashboard'))
     
     challenger_team = Team.query.get(session['selected_team_id'])
-    if challenger_team is None:
+    if challenger_team is None or challenger_team.user_id != user.id:
         flash("Invalid selected team.", "danger")
         return redirect(url_for('game_bp.team_page', team_id=team_id))
     
-    if challenger_team.user_id != user.id:
-        flash("Invalid selected team.", "danger")
-        return redirect(url_for('game_bp.team_page', team_id=team_id))
+    # NEW: Get num_sims from form (default 1)
+    num_sims = int(request.form.get('num_sims', 1))
+    num_sims = max(1, min(num_sims, 10))  # Cap at 10 for sanity
     
-    # Create challenge message
-    message = Message(
-        sender_id=user.id,
-        recipient_id=challenged_team.user_id,
-        subject=f"Challenge to Friendly Match from {challenger_team.name}",
-        body=f"{user.username} has challenged your team {challenged_team.name} to a friendly match with their team {challenger_team.name}. Accept?",
-        is_challenge=True,
-        challenger_team_id=challenger_team.id,
-        challenged_team_id=challenged_team.id
-    )
-    db.session.add(message)
-    db.session.commit()
+    # Run multiple sims
+    results = []
+    for _ in range(num_sims):
+        sim_result = simulate_match(challenger_team.id, challenged_team.id)
+        results.append(sim_result)
     
-    flash("Challenge sent!", "success")
-    return redirect(url_for('game_bp.team_page', team_id=team_id))
+    return render_template('match_result.html', results=results)  # Pass list for multi
 
 @game_bp.route('/mailbox')
 def mailbox():
@@ -234,14 +226,11 @@ def accept_challenge(message_id):
     message.is_accepted = True
     db.session.commit()
     
-    # For now, just flash; later, schedule match
-    flash("Challenge accepted! Match will be scheduled soon.", "success")
-    
-    # NEW: Query the teams using IDs
+    # Query teams and simulate
     challenged_team = Team.query.get(message.challenged_team_id)
     challenger_team = Team.query.get(message.challenger_team_id)
     
-    # Send response message to sender
+    # Send response
     response = Message(
         sender_id=user.id,
         recipient_id=message.sender_id,
@@ -251,7 +240,9 @@ def accept_challenge(message_id):
     db.session.add(response)
     db.session.commit()
     
-    return redirect(url_for('game_bp.view_mail', message_id=message_id))
+    # Simulate (single for now; add multi later if needed)
+    sim_result = simulate_match(challenger_team.id, challenged_team.id)
+    return render_template('match_result.html', results=[sim_result])  # List for consistency
 
 @game_bp.route('/send_message/<username>', methods=['POST'])
 def send_message(username):
@@ -339,3 +330,21 @@ def delete_mail(message_id):
     
     flash("Message deleted.", "success")
     return redirect(url_for('game_bp.mailbox'))
+
+@game_bp.route('/simulate')
+def simulate():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    user = User.query.filter_by(username=session['username']).first()
+    all_teams = Team.query.filter(Team.user_id != user.id).all()  # All other teams as "enemies"
+    
+    enemies = []
+    for team in all_teams:
+        players = team.players
+        avg_skill = sum(p.skill for p in players) / len(players) if players else 0
+        avg_shape = sum(p.shape for p in players) / len(players) if players else 0  # Placeholder
+        info = f"Avg Skill: {avg_skill:.1f} - Higher = more shots/success. Avg Shape: {avg_shape:.1f}% - (Future: Low = more misses; prematch: Expect {int(avg_skill / 10)} goals if matched)."
+        enemies.append({'team': team, 'info': info})
+    
+    return render_template('simulate.html', enemies=enemies)

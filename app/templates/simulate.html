@@ -1,0 +1,31 @@
+<!-- app/templates/simulate.html (updated with num_sims form) -->
+{% extends "base.html" %}
+{% block title %}Simulate Enemies{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Available Enemy Teams</h1>
+    </div>
+    <div class="card-body">
+        <p>Click "Challenge" to simulate (immediate for testing). Prematch info based on avgs; during match, higher skill = more shots/success with randomness adds variance.</p>
+        <ul class="list-group">
+            {% for enemy in enemies %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1">{{ enemy.team.name }} ({{ enemy.team.country }})</h5>
+                    <small>{{ enemy.info }}</small>
+                </div>
+                <form method="POST" action="{{ url_for('game_bp.challenge_team', team_id=enemy.team.id) }}">
+                    <div class="input-group input-group-sm">
+                        <input type="number" name="num_sims" class="form-control" min="1" max="10" value="1" placeholder="Num Sims">
+                        <button type="submit" class="btn btn-primary btn-sm">Challenge</button>
+                    </div>
+                </form>
+            </li>
+            {% else %}
+            <p>No enemy teams available.</p>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}
