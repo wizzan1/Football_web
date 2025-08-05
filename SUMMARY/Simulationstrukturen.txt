@@ -1,3 +1,4 @@
+
 Directory Structure
 textfootball_game_web/
 ├── app/
