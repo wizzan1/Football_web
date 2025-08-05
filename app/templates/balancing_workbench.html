@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}Simulation Sandbox & Balancing Workbench{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Simulation Sandbox & Balancing Workbench</h1>
+    </div>
+    <div class="card-body">
+        <p class="card-text">Adjust your team's stats in real-time and see the immediate impact on match outcome probabilities. Changes here are for simulation only and will not be saved.</p>
+        {% if not user_team %}
+        <div class="alert alert-warning" role="alert">
+            You must have a team selected to use the workbench. Please go to your <a href="{{ url_for('game_bp.dashboard') }}" class="alert-link">Dashboard</a>.
+        </div>
+        {% else %}
+        <div class="row g-3">
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <strong>Your Team: {{ user_team.name }}</strong> (Starting 11)
+                    </div>
+                    <div class="card-body overflow-auto" style="max-height: 60vh;">
+                        <form id="user-team-form">
+                            <table class="table table-sm small">
+                                <thead>
+                                    <tr>
+                                        <th>Player</th>
+                                        <th>Pos</th>
+                                        <th class="text-center">Skill</th>
+                                        <th class="text-center">Shape</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for player in starting_11 %}
+                                    <tr>
+                                        <td>{{ player.name }}</td>
+                                        <td><span class="badge bg-secondary">{{ player.position.name[0] }}</span></td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm player-stat-input" 
+                                                   data-player-id="{{ player.id }}" data-stat-type="skill"
+                                                   value="{{ player.skill }}" min="1" max="100">
+                                        </td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm player-stat-input" 
+                                                   data-player-id="{{ player.id }}" data-stat-type="shape"
+                                                   value="{{ player.shape }}" min="1" max="100">
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-3">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <strong>Enemy Team</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="enemy-team-select" class="form-label">Select Opponent:</label>
+                            <select id="enemy-team-select" class="form-select">
+                                <option value="">-- Choose an Enemy --</option>
+                                {% for team in all_other_teams %}
+                                <option value="{{ team.id }}">{{ team.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div id="enemy-team-panel" class="overflow-auto" style="max-height: 50vh;">
+                            <p class="text-muted text-center mt-4">Select an opponent to see their lineup.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <strong>Analysis & Results</strong>
+                    </div>
+                    <div class="card-body" id="results-panel">
+                        <p class="text-muted text-center mt-4">Adjust a stat or select an opponent to calculate odds.</p>
+                        <div id="loader" class="d-none text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p>Recalculating...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<template id="analysis-template">
+    <ul class="nav nav-pills nav-fill nav-sm mb-2" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="pills-home-tab" data-bs-toggle="pill" data-bs-target="#pills-home" type="button" role="tab">Home Fixture</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="pills-away-tab" data-bs-toggle="pill" data-bs-target="#pills-away" type="button" role="tab">Away Fixture</button>
+        </li>
+    </ul>
+    <div class="tab-content">
+        <div class="tab-pane fade show active p-2 border rounded" id="pills-home" role="tabpanel"></div>
+        <div class="tab-pane fade p-2 border rounded" id="pills-away" role="tabpanel"></div>
+    </div>
+</template>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const enemySelect = document.getElementById('enemy-team-select');
+    const statInputs = document.querySelectorAll('.player-stat-input');
+    const resultsPanel = document.getElementById('results-panel');
+    const enemyPanel = document.getElementById('enemy-team-panel');
+    const loader = document.getElementById('loader');
+    const analysisTemplate = document.getElementById('analysis-template');
+    
+    let debounceTimer;
+
+    function handleInputChange() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(updateWorkbench, 500); // Debounce to avoid too many requests
+    }
+
+    enemySelect.addEventListener('change', updateWorkbench);
+    statInputs.forEach(input => {
+        input.addEventListener('input', handleInputChange);
+    });
+
+    async function updateWorkbench() {
+        const enemyTeamId = enemySelect.value;
+        if (!enemyTeamId) {
+            resultsPanel.innerHTML = '<p class="text-muted text-center mt-4">Adjust a stat or select an opponent to calculate odds.</p>';
+            enemyPanel.innerHTML = '<p class="text-muted text-center mt-4">Select an opponent to see their lineup.</p>';
+            return;
+        }
+
+        resultsPanel.innerHTML = '';
+        loader.classList.remove('d-none');
+        resultsPanel.appendChild(loader);
+
+        const userTeamPlayers = [];
+        const playerIds = new Set();
+        document.querySelectorAll('.player-stat-input[data-player-id]').forEach(input => {
+            playerIds.add(input.dataset.playerId);
+        });
+
+        playerIds.forEach(id => {
+            const skillInput = document.querySelector(`.player-stat-input[data-player-id='${id}'][data-stat-type='skill']`);
+            const shapeInput = document.querySelector(`.player-stat-input[data-player-id='${id}'][data-stat-type='shape']`);
+            userTeamPlayers.push({
+                id: id,
+                skill: parseInt(skillInput.value, 10) || 50,
+                shape: parseInt(shapeInput.value, 10) || 50
+            });
+        });
+
+        try {
+            const response = await fetch("{{ url_for('game_bp.recalculate_odds') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    enemy_team_id: enemyTeamId,
+                    user_team_players: userTeamPlayers
+                })
+            });
+
+            loader.classList.add('d-none');
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Server responded with an error');
+            }
+            
+            const data = await response.json();
+            if (data.error) {
+                 throw new Error(data.error);
+            }
+
+            renderEnemyPanel(data.home_fixture.stats.enemy_team);
+            renderResultsPanel(data);
+
+        } catch (error) {
+            loader.classList.add('d-none');
+            resultsPanel.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+            console.error('Error recalculating odds:', error);
+        }
+    }
+
+    function renderEnemyPanel(enemyTeamStats) {
+        let html = '<table class="table table-sm small"><thead><tr><th>Player</th><th>Pos</th><th class="text-center">Skill</th><th class="text-center">Shape</th></tr></thead><tbody>';
+        enemyTeamStats.lineup.forEach(p => {
+             html += `<tr>
+                <td>${p.name}</td>
+                <td><span class="badge bg-secondary">${p.position[0]}</span></td>
+                <td class="text-center">${p.skill}</td>
+                <td class="text-center">${p.shape}</td>
+             </tr>`;
+        });
+        html += '</tbody></table>';
+        enemyPanel.innerHTML = html;
+    }
+
+    function renderResultsPanel(data) {
+        const clone = analysisTemplate.content.cloneNode(true);
+        const homePane = clone.querySelector('#pills-home');
+        const awayPane = clone.querySelector('#pills-away');
+        
+        // Home Fixture
+        homePane.innerHTML = generateFixtureHtml(data.home_fixture, data.home_fixture.stats.user_team.name, data.home_fixture.stats.enemy_team.name, true);
+
+        // Away Fixture (Note: User win prob is enemy's loss prob from API)
+        awayPane.innerHTML = generateFixtureHtml(data.away_fixture, data.away_fixture.stats.user_team.name, data.away_fixture.stats.enemy_team.name, false);
+
+        resultsPanel.innerHTML = '';
+        resultsPanel.appendChild(clone);
+    }
+    
+    function generateFixtureHtml(fixtureData, userTeamName, enemyTeamName, isHomeFixture) {
+        const userStats = fixtureData.stats.user_team;
+        const enemyStats = fixtureData.stats.enemy_team;
+        const probs = fixtureData.probs;
+        
+        let winProb, lossProb, drawProb, avgFor, avgAgainst;
+
+        if (isHomeFixture) {
+            winProb = probs.win_prob;
+            drawProb = probs.draw_prob;
+            lossProb = probs.loss_prob;
+            avgFor = probs.avg_goals_for;
+            avgAgainst = probs.avg_goals_against;
+        } else {
+            // For away fixture, user win is loss_prob from API, user loss is win_prob from API
+            winProb = probs.loss_prob; 
+            drawProb = probs.draw_prob;
+            lossProb = probs.win_prob;
+            avgFor = probs.avg_goals_against;
+            avgAgainst = probs.avg_goals_for;
+        }
+
+        const taleOfTheTape = `
+            <table class="table table-sm table-bordered text-center small mb-2">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 25%;">Metric</th>
+                        <th scope="col" class="${userStats.is_home ? 'table-info' : ''}">${userStats.name} ${userStats.is_home ? '(H)' : ''}</th>
+                        <th scope="col" class="${enemyStats.is_home ? 'table-info' : ''}">${enemyStats.name} ${enemyStats.is_home ? '(H)' : ''}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><th>Avg. Base Skill</th><td>${userStats.avg_base_skill.toFixed(1)}</td><td>${enemyStats.avg_base_skill.toFixed(1)}</td></tr>
+                    <tr><th>Avg. Team Shape</th><td>${userStats.avg_shape.toFixed(1)}%</td><td>${enemyStats.avg_shape.toFixed(1)}%</td></tr>
+                    <tr class="fw-bold"><th>Avg. Effective Skill</th><td>${userStats.avg_effective_skill.toFixed(1)}</td><td>${enemyStats.avg_effective_skill.toFixed(1)}</td></tr>
+                    ${['GOALKEEPER', 'DEFENDER', 'MIDFIELDER', 'FORWARD'].map(pos => `
+                    <tr>
+                        <th>${pos.substring(0,3)} Str</th>
+                        <td>${userStats.is_home ? `${userStats.base_zonal_strength[pos].toFixed(1)} → <strong>${userStats.zonal_strength[pos].toFixed(1)}</strong>` : userStats.zonal_strength[pos].toFixed(1)}</td>
+                        <td>${enemyStats.is_home ? `${enemyStats.base_zonal_strength[pos].toFixed(1)} → <strong>${enemyStats.zonal_strength[pos].toFixed(1)}</strong>` : enemyStats.zonal_strength[pos].toFixed(1)}</td>
+                    </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        
+        const progressBar = `
+            <div class="progress" style="height: 20px; font-size: 0.75rem; font-weight: bold;">
+                <div class="progress-bar bg-success" style="width: ${winProb}%"><span>${winProb.toFixed(1)}%</span></div>
+                <div class="progress-bar bg-warning text-dark" style="width: ${drawProb}%"><span>${drawProb.toFixed(1)}%</span></div>
+                <div class="progress-bar bg-danger" style="width: ${lossProb}%"><span>${lossProb.toFixed(1)}%</span></div>
+            </div>
+            <div class="d-flex justify-content-between small mt-1">
+                <span class="text-success">■ ${userTeamName} Win</span>
+                <span class="text-warning">■ Draw</span>
+                <span class="text-danger">■ ${enemyTeamName} Win</span>
+            </div>
+            <p class="small mt-2 text-center mb-0">Avg Goals: <strong>${avgFor.toFixed(2)}</strong> - <strong>${avgAgainst.toFixed(2)}</strong></p>
+        `;
+
+        return taleOfTheTape + progressBar;
+    }
+
+});
+</script>
+{% endblock %}

@@ -88,7 +88,8 @@ class MatchTeam:
             'name': self.team.name, 'is_home': self.is_home,
             'avg_base_skill': self.avg_base_skill, 'avg_shape': self.avg_shape, 'avg_effective_skill': self.avg_effective_skill,
             'base_zonal_strength': {pos.name: strength for pos, strength in self.base_zonal_strength.items()},
-            'zonal_strength': {pos.name: strength for pos, strength in self.zonal_strength.items()}
+            'zonal_strength': {pos.name: strength for pos, strength in self.zonal_strength.items()},
+            'lineup': [{'name': p.name, 'position': p.position.value, 'skill': p.skill, 'shape': p.shape} for p in self.get_starting_11()]
         }
 
 class MatchSimulator:
@@ -116,7 +117,7 @@ class MatchSimulator:
             self.minute += time_increment
             if self.minute > 90: self.minute = 90
             if self.logging_enabled and last_minute < 45 and self.minute >= 45:
-                 self.log_event("Halftime", importance='info')
+                   self.log_event("Halftime", importance='info')
             self.process_event()
         if self.logging_enabled: self.log_event(f"Full Time! Final score: {self.team_a.score} - {self.team_b.score}", importance='final')
         return self.get_results()
@@ -201,8 +202,12 @@ def simulate_match(team_a_id, team_b_id):
         return {'log': [{'message': 'Invalid Teams'}], 'score_a': 0, 'score_b': 0, 'team_a_name': '?', 'team_b_name': '?'}
     return MatchSimulator(team_a, team_b, logging_enabled=True).simulate()
 
-def get_prematch_odds(user_team_id, enemy_team_id, simulations=100):
-    user_team_model, enemy_team_model = Team.query.get(user_team_id), Team.query.get(enemy_team_id)
+def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, user_team_model=None, enemy_team_model=None):
+    if not user_team_model:
+        user_team_model = Team.query.get(user_team_id)
+    if not enemy_team_model:
+        enemy_team_model = Team.query.get(enemy_team_id)
+
     if not user_team_model or not enemy_team_model: return {'error': 'Invalid teams'}
 
     user_team_home, user_team_away = MatchTeam(user_team_model, is_home=True), MatchTeam(user_team_model, is_home=False)

@@ -1,9 +1,9 @@
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
 from app import db
 from .models import User, Team, Player, Position, Message
 import random
 from datetime import datetime
-from .match_sim import simulate_match, get_prematch_odds # <-- MODIFIED: Import get_prematch_odds
+from .match_sim import simulate_match, get_prematch_odds, MatchTeam
 
 game_bp = Blueprint('game_bp', __name__)
 
@@ -157,7 +157,31 @@ def mailbox():
     sent = Message.query.filter_by(sender_id=user.id).order_by(Message.timestamp.desc()).all()
     return render_template('mailbox.html', received=received, sent=sent)
 
-@game_bp.route('/mail/<int:message_id>') # <-- CORRECTED
+@game_bp.route('/compose', methods=['GET', 'POST'])
+def compose():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    if request.method == 'POST':
+        recipient_username = request.form.get('recipient')
+        subject = request.form.get('subject')
+        body = request.form.get('body')
+        sender = User.query.filter_by(username=session['username']).first()
+        recipient = User.query.filter_by(username=recipient_username).first()
+        if not recipient:
+            flash(f"User '{recipient_username}' not found.", 'danger')
+            return render_template('compose.html', subject=subject, body=body, recipient=recipient_username)
+        if recipient.id == sender.id:
+            flash("You cannot send a message to yourself.", 'warning')
+            return render_template('compose.html', subject=subject, body=body, recipient=recipient_username)
+        message = Message(sender_id=sender.id, recipient_id=recipient.id, subject=subject, body=body)
+        db.session.add(message)
+        db.session.commit()
+        flash('Your message has been sent.', 'success')
+        return redirect(url_for('game_bp.mailbox'))
+    recipient = request.args.get('recipient', '')
+    return render_template('compose.html', recipient=recipient)
+
+@game_bp.route('/mail/<int:message_id>')
 def view_mail(message_id):
     if 'username' not in session: return redirect(url_for('auth_bp.login'))
     message = Message.query.get_or_404(message_id)
@@ -169,6 +193,25 @@ def view_mail(message_id):
         message.is_read = True
         db.session.commit()
     return render_template('view_mail.html', message=message)
+
+# --- vvv NEW ROUTE vvv ---
+@game_bp.route('/delete_mail/<int:message_id>', methods=['POST'])
+def delete_mail(message_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+
+    user = User.query.filter_by(username=session['username']).first()
+    message = Message.query.get_or_404(message_id)
+
+    # Security check: User must be either the sender or recipient to delete the message.
+    if message.sender_id != user.id and message.recipient_id != user.id:
+        flash("You do not have permission to delete this message.", "danger")
+        return redirect(url_for('game_bp.mailbox'))
+
+    db.session.delete(message)
+    db.session.commit()
+    flash("Message deleted successfully.", "success")
+    return redirect(url_for('game_bp.mailbox'))
 
 @game_bp.route('/accept_challenge/<int:message_id>', methods=['POST'])
 def accept_challenge(message_id):
@@ -192,23 +235,71 @@ def accept_challenge(message_id):
 def simulate():
     if 'username' not in session:
         return redirect(url_for('auth_bp.login'))
-
     user = User.query.filter_by(username=session['username']).first()
     all_teams = Team.query.filter(Team.user_id != user.id).all()
-
     user_team_id = session.get('selected_team_id')
-    
     enemies = []
     for team in all_teams:
-        players = team.players
-        avg_skill = sum(p.skill for p in players) / len(players) if players else 0
-        avg_effective_skill = sum(p.effective_skill for p in players) / len(players) if players else 0
-        info = f"Avg Base Skill: {avg_skill:.1f}. Avg Effective Skill (with Shape): {avg_effective_skill:.1f}."
-        
         odds = None
         if user_team_id:
-            odds = get_prematch_odds(user_team_id, team.id)
-
-        enemies.append({'team': team, 'info': info, 'odds': odds})
-
+            odds = get_prematch_odds(user_team_id=user_team_id, enemy_team_id=team.id)
+        enemies.append({'team': team, 'odds': odds})
     return render_template('simulate.html', enemies=enemies, has_selected_team=(user_team_id is not None))
+
+@game_bp.route('/workbench')
+def workbench():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    user_team_id = session.get('selected_team_id')
+    if not user_team_id:
+        flash("Please select a team from the dashboard to use the Balancing Workbench.", "warning")
+        return redirect(url_for('game_bp.dashboard'))
+
+    user = User.query.filter_by(username=session['username']).first()
+    user_team = Team.query.get(user_team_id)
+    
+    if user_team.user_id != user.id:
+        flash("Invalid selected team.", "danger")
+        session.pop('selected_team_id', None)
+        return redirect(url_for('game_bp.dashboard'))
+        
+    match_team_instance = MatchTeam(user_team)
+    starting_11 = sorted(match_team_instance.get_starting_11(), key=lambda p: (
+        {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}[p.position],
+        p.name
+    ))
+    all_other_teams = Team.query.filter(Team.id != user_team_id).order_by(Team.name).all()
+    return render_template('balancing_workbench.html',
+                           user_team=user_team,
+                           starting_11=starting_11,
+                           all_other_teams=all_other_teams)
+
+@game_bp.route('/recalculate_odds', methods=['POST'])
+def recalculate_odds():
+    if 'username' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+    data = request.get_json()
+    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data:
+        return jsonify({'error': 'Invalid request data'}), 400
+    user_team_id = session.get('selected_team_id')
+    if not user_team_id:
+        return jsonify({'error': 'No team selected'}), 400
+        
+    user_team_model = Team.query.get(user_team_id)
+    enemy_team_model = Team.query.get(data.get('enemy_team_id'))
+    if not user_team_model or not enemy_team_model:
+        return jsonify({'error': 'Invalid team ID provided'}), 404
+
+    modified_stats = {int(p['id']): {'skill': int(p['skill']), 'shape': int(p['shape'])} for p in data['user_team_players']}
+    
+    for player in user_team_model.players:
+        if player.id in modified_stats:
+            player.skill = modified_stats[player.id]['skill']
+            player.shape = modified_stats[player.id]['shape']
+
+    odds = get_prematch_odds(user_team_model=user_team_model, enemy_team_model=enemy_team_model)
+    
+    db.session.expunge(user_team_model)
+
+    return jsonify(odds)

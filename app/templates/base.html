@@ -1,63 +1,88 @@
-<!-- app/templates/base.html (updated with Mailbox link in nav) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Football Manager{% endblock %}</title>
+    <title>{% block title %}TextFootball Game{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         body {
             background-image: url('https://images.pexels.com/photos/114296/pexels-photo-114296.jpeg');
             background-size: cover;
-            background-position: center;
             background-attachment: fixed;
-            padding-top: 80px;
+            background-position: center;
+        }
+        .card {
+            background-color: rgba(255, 255, 255, 0.9);
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('game_bp.dashboard') }}">Football Manager</a>
-            <div class="collapse navbar-collapse">
+            <a class="navbar-brand" href="{{ url_for('game_bp.index') }}">TextFootball</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="{{ url_for('game_bp.dashboard') }}">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('game_bp.mailbox') }}">Mailbox</a>
-                    </li>
+                    {% if 'username' in session %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('game_bp.dashboard') }}">Dashboard</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('game_bp.mailbox') }}">Mailbox</a>
+                        </li>
+                        <!-- ### NEW WORKBENCH LINK ### -->
+                        <li class="nav-item">
+                            <a class="nav-link text-warning" href="{{ url_for('game_bp.workbench') }}"><i class="bi bi-tools"></i> Workbench</a>
+                        </li>
+                    {% endif %}
                 </ul>
-                <form class="d-flex me-3" action="{{ url_for('game_bp.search') }}" method="post">
-                    <input class="form-control me-2" type="search" placeholder="Search users/teams" name="query" aria-label="Search">
-                    <button class="btn btn-outline-success" type="submit">Search</button>
-                </form>
-                {% if selected_team %}
-                    <div class="navbar-text me-3">
-                        <strong>Selected Team:</strong> {{ selected_team.name }} <br>
-                        <small>
-                            <span class="badge bg-secondary">Liga: {{ selected_team.league or 'None' }}</span>
-                            <span class="badge bg-secondary">Serie: {{ selected_team.division or 'None' }}</span>
-                            <span class="badge bg-secondary">Säsong: {{ selected_team.season or 'None' }}</span>
-                        </small>
-                    </div>
+
+                {% if 'username' in session and selected_team %}
+                    <span class="navbar-text me-3">
+                        Active Team: <span class="badge bg-primary">{{ selected_team.name }}</span>
+                    </span>
                 {% endif %}
-                {% if session.username %}
-                <span class="navbar-text me-3">
-                    Welcome, {{ session.username }}
-                </span>
-                <a href="{{ url_for('auth_bp.logout') }}" class="btn btn-outline-danger">Logout</a>
+
+                {% if 'username' in session %}
+                    <form class="d-flex" action="{{ url_for('game_bp.search') }}" method="POST">
+                        <input class="form-control me-2" type="search" placeholder="Search Users/Teams" aria-label="Search" name="query">
+                        <button class="btn btn-outline-success" type="submit">Search</button>
+                    </form>
+                    <ul class="navbar-nav ms-2">
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                {{ session['username'] }}
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                                <li><a class="dropdown-item" href="{{ url_for('game_bp.user_profile', username=session['username']) }}">Profile</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="{{ url_for('auth_bp.logout') }}">Logout</a></li>
+                            </ul>
+                        </li>
+                    </ul>
+                {% else %}
+                    <ul class="navbar-nav">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_bp.login') }}">Login</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_bp.register') }}">Register</a>
+                        </li>
+                    </ul>
                 {% endif %}
             </div>
         </div>
     </nav>
-    <main class="container mt-4">
+
+    <main class="container">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ category or 'info' }} alert-dismissible fade show" role="alert">
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
                         {{ message }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
@@ -66,6 +91,8 @@
         {% endwith %}
         {% block content %}{% endblock %}
     </main>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>
