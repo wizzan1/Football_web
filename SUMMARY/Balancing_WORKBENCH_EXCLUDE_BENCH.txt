@@ -3,30 +3,30 @@ Directory Structure
 Generated code
 textfootball_game_web/
 ├── app/
-│ ├── init.py
-│ ├── match_sim.py
-│ ├── models.py
-│ ├── routes_auth.py
-│ ├── routes_game.py
-│ ├── database.db
-│ └── templates/
-│ ├── balancing_workbench.html <-- NEW FILE
-│ ├── base.html
-│ ├── coming_soon.html
-│ ├── compose.html
-│ ├── create_team.html
-│ ├── dashboard.html
-│ ├── index.html
-│ ├── login.html
-│ ├── mailbox.html
-│ ├── match_result.html
-│ ├── player_page.html
-│ ├── register.html
-│ ├── search.html
-│ ├── simulate.html
-│ ├── team_page.html
-│ ├── user_profile.html
-│ └── view_mail.html
+│   ├── __init__.py
+│   ├── match_sim.py
+│   ├── models.py
+│   ├── routes_auth.py
+│   ├── routes_game.py
+│   ├── database.db
+│   └── templates/
+│       ├── balancing_workbench.html  <-- NEW FILE
+│       ├── base.html
+│       ├── coming_soon.html
+│       ├── compose.html
+│       ├── create_team.html
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       ├── mailbox.html
+│       ├── match_result.html
+│       ├── player_page.html
+│       ├── register.html
+│       ├── search.html
+│       ├── simulate.html
+│       ├── team_page.html
+│       ├── user_profile.html
+│       └── view_mail.html
 ├── .gitignore
 ├── README.md
 ├── requirements.txt
@@ -35,11 +35,11 @@ Use code with caution.
 File Breakdown
 run.py: The main entry point to start the application. It imports the create_app factory from the app package and runs the resulting Flask application.
 app/: The primary Python package containing all core application logic, models, routes, and templates.
-app/init.py: The application factory. This file contains the create_app() function which initializes the Flask application, configures the secret key and the SQLAlchemy database URI, initializes the database object (db), and registers all the route blueprints (auth_bp, game_bp). It also includes a context processor to inject the user's currently selected team into all templates, allowing the navigation bar to display persistent team context.
+app/__init__.py: The application factory. This file contains the create_app() function which initializes the Flask application, configures the secret key and the SQLAlchemy database URI, initializes the database object (db), and registers all the route blueprints (auth_bp, game_bp). It also includes a context processor to inject the user's currently selected team into all templates, allowing the navigation bar to display persistent team context.
 app/match_sim.py: The core simulation engine for the entire game, operating in two distinct modes.
-Analytical Mode (get_prematch_odds): A high-speed Monte Carlo analysis tool. It runs hundreds of lightweight simulations to calculate win/draw/loss probabilities. It can be called with team IDs or with modified, in-memory team objects, making it the powerhouse behind the Balancing Workbench. It supports an optional fixed_user_lineup_ids parameter to lock a specific starting 11 for simulations (e.g., in the workbench to ensure only selected players are used, ignoring bench swaps). It returns a comprehensive report for both home and away fixtures.
+Analytical Mode (get_prematch_odds): A high-speed Monte Carlo analysis tool. It runs hundreds of lightweight simulations to calculate win/draw/loss probabilities. It can be called with team IDs or with modified, in-memory team objects, making it the powerhouse behind the Balancing Workbench. It returns a comprehensive report for both home and away fixtures.
 Story-Telling Mode (simulate_match): Runs a single, detailed match simulation with full event logging enabled. It generates a rich, step-by-step log of the match, including explicit calculations for how home advantage boosts zonal strengths (Base → Boosted), designed for the match result page.
-MatchTeam Class: A helper class that prepares a team for a match by calculating all key metrics: average base skill, shape, effective skill, and the final zonal strengths (GK, DEF, MID, FWD) that power the simulation. It now supports an optional fixed_lineup_ids parameter to enforce a specific starting 11 (bypassing automatic best-player selection), and includes a score attribute for tracking goals during simulations. It also provides the starting lineup in its stats dictionary for UI rendering.
+MatchTeam Class: A helper class that prepares a team for a match by calculating all key metrics: average base skill, shape, effective skill, and the final zonal strengths (GK, DEF, MID, FWD) that power the simulation. It now also provides the starting lineup in its stats dictionary for UI rendering.
 app/models.py: Defines the database schema using SQLAlchemy ORM classes.
 User: Stores user account information, including username and hashed password. It has one-to-many relationships with Team and Message.
 Team: Stores information for a football team, including its name and country, and links back to its owner (User). It has a one-to-many relationship with Player.
@@ -47,14 +47,14 @@ Player: Stores all attributes for an individual player, such as name, age, posit
 Message: Stores private messages between users, with fields for sender, recipient, subject, and body, and flags for handling challenges.
 app/routes_auth.py: A Flask Blueprint dedicated to handling all user authentication. It manages the routes for /register, /login, and /logout.
 app/routes_game.py: The main Flask Blueprint for all core gameplay features and URLs.
-/workbench (New): Renders the balancing_workbench.html template. This is the user interface for the developer's "Simulation Sandbox", where they can edit player stats in real-time. It now computes the initial starting 11, stores their IDs in the session for fixed lineup enforcement, passes all players (sorted by position and skill) to the template, and identifies starting players for highlighting.
-/recalculate_odds (New): A POST-only, AJAX-driven endpoint that serves the Balancing Workbench. It receives temporary player stats, creates non-persistent, in-memory team models, retrieves fixed lineup IDs from the session, runs the get_prematch_odds analysis with fixed lineup enforcement, and returns the results as JSON. This allows for instant feedback without altering the database, while ensuring simulations use only the locked starting 11.
+/workbench (New): Renders the balancing_workbench.html template. This is the user interface for the developer's "Simulation Sandbox", where they can edit player stats in real-time.
+/recalculate_odds (New): A POST-only, AJAX-driven endpoint that serves the Balancing Workbench. It receives temporary player stats, creates non-persistent, in-memory team models, runs the get_prematch_odds analysis, and returns the results as JSON. This allows for instant feedback without altering the database.
 /simulate: Renders the player-facing simulate.html template, which acts as the Pre-Match Analysis Dashboard.
 /challenge/<id>: Triggers one or more fully detailed story-mode simulations and renders the results.
 /mailbox, /mail/<id>, /compose, /delete_mail: A complete suite of routes that provide a fully functional in-game messaging system.
 app/database.db: The SQLite database file storing all persistent data.
 app/templates/: The directory containing all user-facing Jinja2 HTML templates.
-balancing_workbench.html (New): The template for the Simulation Sandbox. It features a three-panel layout: an editable list of the user's full squad (with starting players highlighted and a checkbox to toggle visibility of bench players for UX), a display for the selected enemy team, and a results panel. It uses JavaScript and AJAX to communicate with the /recalculate_odds endpoint, providing instant, real-time updates to the analysis as the developer tweaks player stats. Bench player edits do not affect odds due to fixed lineup logic.
+balancing_workbench.html (New): The template for the Simulation Sandbox. It features a three-panel layout: an editable list of the user's players, a display for the selected enemy team, and a results panel. It uses JavaScript and AJAX to communicate with the /recalculate_odds endpoint, providing instant, real-time updates to the analysis as the developer tweaks player stats.
 base.html: The master site template. It provides the overall page structure and includes the main navigation bar, which now contains a link to the new "Balancing Workbench".
 dashboard.html: The user's main landing page after login. It now features prominent, distinct links to both the player-facing "Pre-Match Analysis" page and the developer-focused "Balancing Workbench".
 simulate.html: The template for the player-facing Pre-Match Analysis Dashboard. It features a tabbed interface showing analyses for Home and Away fixtures, including the "Tale of the Tape" and win-probability bars.

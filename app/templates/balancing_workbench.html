@@ -81,7 +81,7 @@
             </div>
             <div class="col-lg-5">
                 <div class="card h-100">
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <strong>Analysis & Results</strong>
                     </div>
                     <div class="card-body" id="results-panel">
@@ -92,6 +92,27 @@
                             </div>
                             <p>Recalculating...</p>
                         </div>
+
+                        <!-- Batch Runner -->
+                        <div id="batch-runner" class="border rounded p-2 mt-3">
+                            <div class="d-flex align-items-end gap-2">
+                                <div class="flex-grow-1">
+                                    <label for="batch-runs" class="form-label mb-1">Batch runs (X)</label>
+                                    <input type="number" id="batch-runs" class="form-control" value="10" min="1" max="100">
+                                </div>
+                                <div class="mb-3">
+                                    <button id="run-batch-btn" class="btn btn-primary">Run Batch</button>
+                                </div>
+                            </div>
+                            <div class="form-text">Each run uses the internal Monte Carlo in <code>get_prematch_odds</code> (default 100 sims).</div>
+                            <div id="batch-loader" class="d-none text-center mt-2">
+                                <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
+                                <p class="small mb-0">Running batch…</p>
+                            </div>
+                            <div id="batch-results" class="mt-3"></div>
+                        </div>
+                        <!-- /Batch Runner -->
+
                     </div>
                 </div>
             </div>
@@ -99,6 +120,7 @@
         {% endif %}
     </div>
 </div>
+
 <template id="analysis-template">
     <ul class="nav nav-pills nav-fill nav-sm mb-2" role="tablist">
         <li class="nav-item" role="presentation">
@@ -114,6 +136,7 @@
     </div>
 </template>
 {% endblock %}
+
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -124,17 +147,25 @@ document.addEventListener('DOMContentLoaded', function () {
     const loader = document.getElementById('loader');
     const analysisTemplate = document.getElementById('analysis-template');
     const showOnlyStartingCheckbox = document.getElementById('show-only-starting');
-   
+
+    // Batch Runner elements
+    const runBatchBtn = document.getElementById('run-batch-btn');
+    const batchRunsInput = document.getElementById('batch-runs');
+    const batchResults = document.getElementById('batch-results');
+    const batchLoader = document.getElementById('batch-loader');
+
     let debounceTimer;
+
     function handleInputChange() {
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(updateWorkbench, 500); // Debounce to avoid too many requests
+        debounceTimer = setTimeout(updateWorkbench, 500);
     }
+
     enemySelect.addEventListener('change', updateWorkbench);
     statInputs.forEach(input => {
         input.addEventListener('input', handleInputChange);
     });
-   
+
     // Toggle visibility of bench players
     showOnlyStartingCheckbox.addEventListener('change', function () {
         const benchRows = document.querySelectorAll('#user-team-table .bench-player');
@@ -142,20 +173,52 @@ document.addEventListener('DOMContentLoaded', function () {
             row.style.display = this.checked ? 'none' : '';
         });
     });
-   
-    // Initial toggle on load (checkbox is checked by default)
+    // Initial toggle on load
     showOnlyStartingCheckbox.dispatchEvent(new Event('change'));
-   
+
     async function updateWorkbench() {
         const enemyTeamId = enemySelect.value;
         if (!enemyTeamId) {
+            resultsPanel.querySelector('#batch-results')?.replaceChildren();
             resultsPanel.innerHTML = '<p class="text-muted text-center mt-4">Adjust a stat or select an opponent to calculate odds.</p>';
             enemyPanel.innerHTML = '<p class="text-muted text-center mt-4">Select an opponent to see their lineup.</p>';
             return;
         }
+
+        // Keep Batch Runner in place
+        const prevBatchRunner = document.getElementById('batch-runner');
         resultsPanel.innerHTML = '';
+        resultsPanel.appendChild(prevBatchRunner);
+
         loader.classList.remove('d-none');
-        resultsPanel.appendChild(loader);
+
+        const userTeamPlayers = collectUserTeamPlayers();
+        try {
+            const response = await fetch("{{ url_for('game_bp.recalculate_odds') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ enemy_team_id: enemyTeamId, user_team_players: userTeamPlayers })
+            });
+            loader.classList.add('d-none');
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Server responded with an error');
+            }
+
+            const data = await response.json();
+            if (data.error) { throw new Error(data.error); }
+
+            renderEnemyPanel(data.home_fixture.stats.enemy_team);
+            renderResultsPanel(data);
+        } catch (error) {
+            loader.classList.add('d-none');
+            resultsPanel.insertAdjacentHTML('afterbegin', `<div class="alert alert-danger">${error.message}</div>`);
+            console.error('Error recalculating odds:', error);
+        }
+    }
+
+    function collectUserTeamPlayers() {
         const userTeamPlayers = [];
         const playerIds = new Set();
         document.querySelectorAll('.player-stat-input[data-player-id]').forEach(input => {
@@ -170,37 +233,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 shape: parseInt(shapeInput.value, 10) || 50
             });
         });
-        try {
-            const response = await fetch("{{ url_for('game_bp.recalculate_odds') }}", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    enemy_team_id: enemyTeamId,
-                    user_team_players: userTeamPlayers
-                })
-            });
-            loader.classList.add('d-none');
-           
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Server responded with an error');
-            }
-           
-            const data = await response.json();
-            if (data.error) {
-                 throw new Error(data.error);
-            }
-            renderEnemyPanel(data.home_fixture.stats.enemy_team);
-            renderResultsPanel(data);
-        } catch (error) {
-            loader.classList.add('d-none');
-            resultsPanel.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
-            console.error('Error recalculating odds:', error);
-        }
+        return userTeamPlayers;
     }
+
     function renderEnemyPanel(enemyTeamStats) {
         let html = '<table class="table table-sm small"><thead><tr><th>Player</th><th>Pos</th><th class="text-center">Skill</th><th class="text-center">Shape</th></tr></thead><tbody>';
         enemyTeamStats.lineup.forEach(p => {
@@ -214,39 +249,58 @@ document.addEventListener('DOMContentLoaded', function () {
         html += '</tbody></table>';
         enemyPanel.innerHTML = html;
     }
+
     function renderResultsPanel(data) {
         const clone = analysisTemplate.content.cloneNode(true);
         const homePane = clone.querySelector('#pills-home');
         const awayPane = clone.querySelector('#pills-away');
-       
-        // Home Fixture
-        homePane.innerHTML = generateFixtureHtml(data.home_fixture, data.home_fixture.stats.user_team.name, data.home_fixture.stats.enemy_team.name, true);
-        // Away Fixture (Note: User win prob is enemy's loss prob from API)
-        awayPane.innerHTML = generateFixtureHtml(data.away_fixture, data.away_fixture.stats.user_team.name, data.away_fixture.stats.enemy_team.name, false);
+
+        // Home Fixture (user at home)
+        homePane.innerHTML = generateFixtureHtml(
+            data.home_fixture,
+            data.home_fixture.stats.user_team.name,
+            data.home_fixture.stats.enemy_team.name,
+            true
+        );
+        // Away Fixture (user away)
+        awayPane.innerHTML = generateFixtureHtml(
+            data.away_fixture,
+            data.away_fixture.stats.user_team.name,
+            data.away_fixture.stats.enemy_team.name,
+            false
+        );
+
+        // Keep the Batch Runner section intact and appended
+        const batchRunner = document.getElementById('batch-runner');
         resultsPanel.innerHTML = '';
         resultsPanel.appendChild(clone);
+        resultsPanel.appendChild(batchRunner);
     }
-   
+
     function generateFixtureHtml(fixtureData, userTeamName, enemyTeamName, isHomeFixture) {
         const userStats = fixtureData.stats.user_team;
         const enemyStats = fixtureData.stats.enemy_team;
         const probs = fixtureData.probs;
-       
+
         let winProb, lossProb, drawProb, avgFor, avgAgainst;
+        let prefix;
         if (isHomeFixture) {
+            prefix = 'home';
             winProb = probs.win_prob;
             drawProb = probs.draw_prob;
             lossProb = probs.loss_prob;
             avgFor = probs.avg_goals_for;
             avgAgainst = probs.avg_goals_against;
         } else {
-            // For away fixture, user win is loss_prob from API, user loss is win_prob from API
+            prefix = 'away';
+            // Away fixture: flip to user perspective
             winProb = probs.loss_prob;
             drawProb = probs.draw_prob;
             lossProb = probs.win_prob;
             avgFor = probs.avg_goals_against;
             avgAgainst = probs.avg_goals_for;
         }
+
         const taleOfTheTape = `
             <table class="table table-sm table-bordered text-center small mb-2">
                 <thead class="table-light">
@@ -270,22 +324,205 @@ document.addEventListener('DOMContentLoaded', function () {
                 </tbody>
             </table>
         `;
-       
+
         const progressBar = `
             <div class="progress" style="height: 20px; font-size: 0.75rem; font-weight: bold;">
-                <div class="progress-bar bg-success" style="width: ${winProb}%"><span>${winProb.toFixed(1)}%</span></div>
-                <div class="progress-bar bg-warning text-dark" style="width: ${drawProb}%"><span>${drawProb.toFixed(1)}%</span></div>
-                <div class="progress-bar bg-danger" style="width: ${lossProb}%"><span>${lossProb.toFixed(1)}%</span></div>
+                <div class="progress-bar bg-success" id="bar-${prefix}-win" style="width: ${winProb}%"><span>${winProb.toFixed(1)}%</span></div>
+                <div class="progress-bar bg-warning text-dark" id="bar-${prefix}-draw" style="width: ${drawProb}%"><span>${drawProb.toFixed(1)}%</span></div>
+                <div class="progress-bar bg-danger" id="bar-${prefix}-loss" style="width: ${lossProb}%"><span>${lossProb.toFixed(1)}%</span></div>
             </div>
             <div class="d-flex justify-content-between small mt-1">
                 <span class="text-success">■ ${userTeamName} Win</span>
                 <span class="text-warning">■ Draw</span>
                 <span class="text-danger">■ ${enemyTeamName} Win</span>
             </div>
-            <p class="small mt-2 text-center mb-0">Avg Goals: <strong>${avgFor.toFixed(2)}</strong> - <strong>${avgAgainst.toFixed(2)}</strong></p>
+            <p class="small mt-2 text-center mb-0">Avg Goals:
+                <strong id="avg-${prefix}-for">${avgFor.toFixed(2)}</strong>
+                -
+                <strong id="avg-${prefix}-against">${avgAgainst.toFixed(2)}</strong>
+            </p>
         `;
         return taleOfTheTape + progressBar;
     }
+
+    // --- Batch Runner ---
+
+    runBatchBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await runBatch();
+    });
+
+    async function runBatch() {
+        const enemyTeamId = enemySelect.value;
+        if (!enemyTeamId) {
+            batchResults.innerHTML = `<div class="alert alert-warning">Select an opponent first.</div>`;
+            return;
+        }
+        const runs = Math.max(1, Math.min(parseInt(batchRunsInput.value || '10', 10), 100));
+        const payload = {
+            enemy_team_id: enemyTeamId,
+            user_team_players: collectUserTeamPlayers(),
+            runs: runs
+        };
+
+        runBatchBtn.disabled = true;
+        batchLoader.classList.remove('d-none');
+        batchResults.innerHTML = '';
+
+        try {
+            const response = await fetch("{{ url_for('game_bp.batch_odds') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Server responded with an error');
+            }
+
+            const data = await response.json();
+            renderBatchResults(data);         // render tables (both teams)
+            applyBatchMeansToMainBars(data);  // update the main colored bars + avg goals
+        } catch (err) {
+            console.error('Batch error:', err);
+            batchResults.innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+        } finally {
+            runBatchBtn.disabled = false;
+            batchLoader.classList.add('d-none');
+        }
+    }
+
+    function renderBatchResults(data) {
+        const fmt = (v, digits = 2) => (typeof v === 'number' ? v.toFixed(digits) : '-');
+
+        // Normalize to always have user/enemy blocks
+        const hasNew = !!data.user && !!data.enemy;
+        const userBlock = hasNew ? data.user : { home: data.home, away: data.away };
+        const enemyBlock = hasNew ? data.enemy : flipPerspectiveFromUser(userBlock);
+
+        const userName = data.user_team_name || 'Your Team';
+        const enemyName = data.enemy_team_name || 'Enemy';
+
+        const block = (title, stats) => `
+            <div class="col-12 col-md-6">
+                <div class="card border-0">
+                    <div class="card-header bg-light"><strong>${title}</strong></div>
+                    <div class="card-body p-2">
+                        <table class="table table-sm small mb-0">
+                            <thead>
+                                <tr><th>Metric</th><th>Mean</th><th>Std Dev</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Win %</td><td>${fmt(stats.means.win_prob, 2)}</td><td>${fmt(stats.stddevs.win_prob, 2)}</td></tr>
+                                <tr><td>Draw %</td><td>${fmt(stats.means.draw_prob, 2)}</td><td>${fmt(stats.stddevs.draw_prob, 2)}</td></tr>
+                                <tr><td>Loss %</td><td>${fmt(stats.means.loss_prob, 2)}</td><td>${fmt(stats.stddevs.loss_prob, 2)}</td></tr>
+                                <tr><td>Avg Goals For</td><td>${fmt(stats.means.avg_goals_for, 3)}</td><td>${fmt(stats.stddevs.avg_goals_for, 3)}</td></tr>
+                                <tr><td>Avg Goals Against</td><td>${fmt(stats.means.avg_goals_against, 3)}</td><td>${fmt(stats.stddevs.avg_goals_against, 3)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+
+        const header = `
+            <div class="mb-2">
+                <span class="badge bg-primary me-2">Runs: ${data.runs ?? '-'}</span>
+                <span class="badge bg-secondary">Sims / run: ${data.simulations_per_run ?? 100}</span>
+            </div>
+        `;
+
+        const userSection = `
+            <div class="card mb-2">
+                <div class="card-header"><strong>${userName} (Your Perspective)</strong></div>
+                <div class="card-body p-2">
+                    <div class="row g-2">
+                        ${block('Home Fixture', userBlock.home)}
+                        ${block('Away Fixture', userBlock.away)}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const enemySection = `
+            <div class="card">
+                <div class="card-header"><strong>${enemyName} (Enemy Perspective)</strong></div>
+                <div class="card-body p-2">
+                    <div class="row g-2">
+                        ${block('Home Fixture', enemyBlock.home)}
+                        ${block('Away Fixture', enemyBlock.away)}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        batchResults.innerHTML = header + userSection + enemySection;
+    }
+
+    // If backend only returns user block (legacy), synthesize enemy by flipping
+    function flipPerspectiveFromUser(userBlock) {
+        const flip = (stats) => {
+            const m = stats.means || {};
+            const s = stats.stddevs || {};
+            const means = {
+                win_prob: Number(m.loss_prob ?? 0),
+                draw_prob: Number(m.draw_prob ?? 0),
+                loss_prob: Number(m.win_prob ?? 0),
+                avg_goals_for: Number(m.avg_goals_against ?? 0),
+                avg_goals_against: Number(m.avg_goals_for ?? 0)
+            };
+            const stddevs = {
+                win_prob: Number(s.loss_prob ?? 0),
+                draw_prob: Number(s.draw_prob ?? 0),
+                loss_prob: Number(s.win_prob ?? 0),
+                avg_goals_for: Number(s.avg_goals_against ?? 0),
+                avg_goals_against: Number(s.avg_goals_for ?? 0)
+            };
+            return { means, stddevs };
+        };
+        return {
+            home: flip(userBlock.away),
+            away: flip(userBlock.home)
+        };
+    }
+
+    // Apply batch MEANS to the main colored progress bars and avg goals
+    function applyBatchMeansToMainBars(data) {
+        const hasNew = !!data.user && !!data.enemy;
+        const userBlock = hasNew ? data.user : { home: data.home, away: data.away };
+        if (userBlock?.home?.means) setBarsFromMeans('home', userBlock.home.means);
+        if (userBlock?.away?.means) setBarsFromMeans('away', userBlock.away.means);
+    }
+
+    function setBarsFromMeans(prefix, means) {
+        const winEl = document.getElementById(`bar-${prefix}-win`);
+        const drawEl = document.getElementById(`bar-${prefix}-draw`);
+        const lossEl = document.getElementById(`bar-${prefix}-loss`);
+        const gfEl = document.getElementById(`avg-${prefix}-for`);
+        const gaEl = document.getElementById(`avg-${prefix}-against`);
+        if (!winEl || !drawEl || !lossEl || !gfEl || !gaEl) return;
+
+        const win = Number(means.win_prob || 0);
+        const draw = Number(means.draw_prob || 0);
+        const loss = Number(means.loss_prob || 0);
+
+        winEl.style.width = `${win}%`;
+        drawEl.style.width = `${draw}%`;
+        lossEl.style.width = `${loss}%`;
+
+        const setBarLabel = (el, val) => {
+            const span = el.querySelector('span') || document.createElement('span');
+            span.textContent = `${val.toFixed(1)}%`;
+            if (!el.contains(span)) el.appendChild(span);
+        };
+        setBarLabel(winEl, win);
+        setBarLabel(drawEl, draw);
+        setBarLabel(lossEl, loss);
+
+        if (typeof means.avg_goals_for === 'number') gfEl.textContent = means.avg_goals_for.toFixed(2);
+        if (typeof means.avg_goals_against === 'number') gaEl.textContent = means.avg_goals_against.toFixed(2);
+    }
+    // --- /Batch Runner ---
 });
 </script>
 {% endblock %}
