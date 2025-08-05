@@ -121,8 +121,15 @@ class MatchSimulator:
         self.zone = 'M'
         self.possession = random.choice([self.team_a, self.team_b])
 
-    def log_event(self, message, importance='normal'):
-        self.log.append({'minute': self.minute, 'message': message, 'importance': importance})
+    def log_event(self, message, importance='normal', event_type=None, details=None):
+        """Logs a match event with optional structured details for analysis."""
+        self.log.append({
+            'minute': self.minute,
+            'message': message,
+            'importance': importance,
+            'event_type': event_type,
+            'details': details
+        })
 
     def get_prematch_summary(self):
         summary = f"Prematch Analysis (Formation: 4-4-2). Home advantage active for {self.team_a.team.name}.\n"
@@ -130,16 +137,16 @@ class MatchSimulator:
         summary += f"DEF: {self.team_a.zonal_strength[Position.DEFENDER]:.1f}, MID: {self.team_a.zonal_strength[Position.MIDFIELDER]:.1f}, ATT: {self.team_a.zonal_strength[Position.FORWARD]:.1f}\n"
         summary += f"--- {self.team_b.team.name} (A) Zonal Ratings (Effective Skill) ---\n"
         summary += f"DEF: {self.team_b.zonal_strength[Position.DEFENDER]:.1f}, MID: {self.team_b.zonal_strength[Position.MIDFIELDER]:.1f}, ATT: {self.team_b.zonal_strength[Position.FORWARD]:.1f}"
-        self.log_event(summary, importance='info')
+        self.log_event(summary, importance='info', event_type='PREMATCH')
 
     def simulate(self):
         # Check for minimum players before starting
         if len(self.team_a.get_starting_11()) < 11 or len(self.team_b.get_starting_11()) < 11:
-            self.log_event("Match abandoned: One or both teams could not field 11 players.", importance='error')
+            self.log_event("Match abandoned: One or both teams could not field 11 players.", importance='error', event_type='ABANDONED')
             return self.get_results()
 
         self.get_prematch_summary()
-        self.log_event("Kickoff!", importance='info')
+        self.log_event("Kickoff!", importance='info', event_type='KICKOFF')
 
         while self.minute < 90:
             # Simulate time passing in variable increments (1-5 minutes)
@@ -153,9 +160,9 @@ class MatchSimulator:
 
             # Check for halftime
             if self.minute >= 45 and self.minute - time_increment < 45:
-                self.log_event("Halftime", importance='info')
+                self.log_event("Halftime", importance='info', event_type='HALF_TIME')
 
-        self.log_event(f"Full Time! Final Score: {self.team_a.team.name} {self.team_a.score} - {self.team_b.score} {self.team_b.team.name}", importance='final')
+        self.log_event(f"Full Time! Final Score: {self.team_a.team.name} {self.team_a.score} - {self.team_b.score} {self.team_b.team.name}", importance='final', event_type='FULL_TIME')
         return self.get_results()
 
     def process_event(self):
@@ -173,80 +180,113 @@ class MatchSimulator:
         att_mid = attacker.zonal_strength[Position.MIDFIELDER]
         def_mid = defender.zonal_strength[Position.MIDFIELDER]
 
-        # Calculate probability of the attacker retaining and advancing using the logistic model
         advance_prob = logistic_probability(att_mid, def_mid, MIDFIELD_SCALING)
+        roll = random.random()
+        result = "Success (Roll < Prob)" if roll < advance_prob else "Fail (Roll >= Prob)"
 
-        if random.random() < advance_prob:
+        details = (
+            f"Midfield Contest: {attacker.team.name} (Att) vs {defender.team.name} (Def)\n"
+            f"  - Att Mid Strength: {att_mid:.1f} vs Def Mid Strength: {def_mid:.1f}\n"
+            f"  - Probability to Advance: {advance_prob:.1%}\n"
+            f"  - Dice Roll (0.0-1.0): {roll:.3f} -> {result}"
+        )
+
+        if roll < advance_prob:
             # Advance to attacking zone
             self.zone = 'A' if attacker == self.team_a else 'B'
             player = attacker.get_random_player([Position.MIDFIELDER])
-            if player:
-                self.log_event(f"{player.name} drives {attacker.team.name} into the attacking third.")
+            message = f"{player.name} drives {attacker.team.name} into the attacking third." if player else f"{attacker.team.name} advances."
+            self.log_event(message, event_type='ADVANCE', details=details)
         else:
             # Turnover
             self.possession = defender
             player = defender.get_random_player([Position.MIDFIELDER, Position.DEFENDER])
-            if player:
-                self.log_event(f"{player.name} intercepts for {defender.team.name} in the midfield.")
+            message = f"{player.name} intercepts for {defender.team.name} in the midfield." if player else f"{defender.team.name} wins the ball back."
+            self.log_event(message, event_type='TURNOVER', details=details)
 
     def resolve_attack(self, attacker_team, defender_team):
         att_str = attacker_team.zonal_strength[Position.FORWARD]
         def_str = defender_team.zonal_strength[Position.DEFENDER]
 
-        # Calculate probability of creating a shot opportunity
         shot_chance_prob = logistic_probability(att_str, def_str, ATTACK_SCALING)
+        roll = random.random()
+        result = "Success (Roll < Prob)" if roll < shot_chance_prob else "Fail (Roll >= Prob)"
 
-        if random.random() < shot_chance_prob:
-            # Shot opportunity created
-            self.log_event(f"{attacker_team.team.name} breaks through the defense and creates a shooting opportunity!")
+        details = (
+            f"Attack Phase: {attacker_team.team.name} (Att) vs {defender_team.team.name} (Def)\n"
+            f"  - Att Fwd Strength: {att_str:.1f} vs Def Strength: {def_str:.1f}\n"
+            f"  - Probability to Create Chance: {shot_chance_prob:.1%}\n"
+            f"  - Dice Roll (0.0-1.0): {roll:.3f} -> {result}"
+        )
+
+        if roll < shot_chance_prob:
+            self.log_event(
+                f"{attacker_team.team.name} breaks through the defense!",
+                event_type='SHOT_OPPORTUNITY',
+                details=details
+            )
             self.resolve_shot(attacker_team, defender_team)
         else:
-            # Defense wins, ball cleared back to midfield
             player = defender_team.get_random_player([Position.DEFENDER])
-            if player:
-                self.log_event(f"Solid defending by {player.name}. {defender_team.team.name} clears the danger.")
+            message = f"Solid defending by {player.name}. {defender_team.team.name} clears the danger." if player else f"The defense holds firm for {defender_team.team.name}."
+            self.log_event(message, event_type='DEFENSIVE_STOP', details=details)
             self.possession = defender_team
             self.zone = 'M'
 
     def resolve_shot(self, attacker_team, defender_team):
-        # Weight selection towards forwards (70% FWD, 30% MID)
         if random.random() < 0.7:
             shooter = attacker_team.get_random_player([Position.FORWARD])
         else:
             shooter = attacker_team.get_random_player([Position.MIDFIELDER])
-            
+
         goalkeeper = defender_team.get_goalkeeper()
 
         if not shooter or not goalkeeper:
-            self.log_event("The attack fizzles out awkwardly.", importance='miss')
+            self.log_event("The attack fizzles out awkwardly.", importance='miss', event_type='ERROR', details="Could not select a valid shooter or goalkeeper.")
             self.possession = defender_team
             self.zone = 'M'
             return
 
-        # Use individual player effectiveness for shot resolution
         shooting_skill = shooter.effective_skill
         gk_skill = goalkeeper.effective_skill
 
-        # Calculate goal probability using logistic function
-        goal_prob = logistic_probability(shooting_skill, gk_skill, SHOT_SCALING)
-        # Apply the global conversion factor to keep scores realistic
-        goal_prob *= GOAL_CONVERSION_FACTOR
+        initial_prob = logistic_probability(shooting_skill, gk_skill, SHOT_SCALING)
+        goal_prob = initial_prob * GOAL_CONVERSION_FACTOR
+        roll = random.random()
+        result = "GOAL (Roll < Prob)" if roll < goal_prob else "NO GOAL (Roll >= Prob)"
 
-        if random.random() < goal_prob:
-            # GOAL!
+        details = (
+            f"Shot Resolution: {shooter.name} (Shooter, {shooting_skill:.1f}) vs {goalkeeper.name} (GK, {gk_skill:.1f})\n"
+            f"  - Base Goal Prob (raw skill matchup): {initial_prob:.1%}\n"
+            f"  - Final Goal Prob (x{GOAL_CONVERSION_FACTOR} realism factor): {goal_prob:.1%}\n"
+            f"  - Dice Roll (0.0-1.0): {roll:.3f} -> {result}"
+        )
+
+        if roll < goal_prob:
             attacker_team.score += 1
             score_line = f"({self.team_a.score}-{self.team_b.score})"
-            self.log_event(f"GOOOOAL!!! {shooter.name} ({attacker_team.team.name}) finds the back of the net! {score_line}", importance='goal')
-            # Reset for kickoff
+            message = f"GOOOOAL!!! {shooter.name} ({attacker_team.team.name}) finds the back of the net! {score_line}"
+            self.log_event(message, importance='goal', event_type='GOAL', details=details)
             self.possession = defender_team
             self.zone = 'M'
         else:
-            # Miss or Save
-            # Determine outcome based on GK skill relative to shooter skill (higher GK skill = more likely a save than a miss)
-            if random.random() < (gk_skill / (shooting_skill + gk_skill)):
-                self.log_event(f"SAVE! A fantastic stop by {goalkeeper.name} to deny {shooter.name}!", importance='save')
+            save_vs_miss_prob = gk_skill / (shooting_skill + gk_skill) if (shooting_skill + gk_skill) > 0 else 0.5
+            save_roll = random.random()
+            save_result = "SAVE (Roll < Prob)" if save_roll < save_vs_miss_prob else "MISS (Roll >= Prob)"
+
+            outcome_details = (
+                f"\nOutcome: Save or Miss?\n"
+                f"  - GK Dominance vs Shooter Error: {save_vs_miss_prob:.1%}\n"
+                f"  - Dice Roll (0.0-1.0): {save_roll:.3f} -> {save_result}"
+            )
+            details += outcome_details
+
+            if save_roll < save_vs_miss_prob:
+                message = f"SAVE! A fantastic stop by {goalkeeper.name} to deny {shooter.name}!"
+                self.log_event(message, importance='save', event_type='SAVE', details=details)
             else:
-                self.log_event(f"MISS! {shooter.name} sends the shot wide/high.", importance='miss')
+                message = f"MISS! {shooter.name} sends the shot wide/high."
+                self.log_event(message, importance='miss', event_type='MISS', details=details)
 
             self.possession = defender_team
             self.zone = 'M'
@@ -266,7 +306,7 @@ def simulate_match(team_a_id, team_b_id):
 
     if not team_a or not team_b:
         return {
-            'log': [{'minute': 0, 'message': 'Invalid Teams Provided', 'importance': 'error'}],
+            'log': [{'minute': 0, 'message': 'Invalid Teams Provided', 'importance': 'error', 'details': None, 'event_type': 'ERROR'}],
             'score_a': 0, 'score_b': 0,
             'team_a_name': team_a.name if team_a else 'Unknown',
             'team_b_name': team_b.name if team_b else 'Unknown'

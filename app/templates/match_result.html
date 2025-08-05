@@ -40,7 +40,7 @@
         border-radius: 5px;
     }
     .log-entry {
-        margin-bottom: 5px;
+        margin-bottom: 8px; /* Increased margin for better separation */
         padding: 4px 8px;
         display: flex;
         align-items: flex-start;
@@ -56,10 +56,24 @@
     .log-minute {
         font-weight: bold;
         margin-right: 15px;
-        color: #007bff; /* Blue for timestamp */
+        color: #0d6efd; /* Bootstrap's primary blue */
         white-space: nowrap;
         min-width: 40px;
     }
+    .log-content {
+        flex-grow: 1; /* Allow content to take remaining space */
+    }
+    .log-details {
+        font-size: 0.85em;
+        color: #6c757d; /* Bootstrap's text-muted */
+        margin-top: 5px;
+        padding-left: 10px;
+        border-left: 2px solid #dee2e6; /* Bootstrap's border-color */
+        font-style: italic;
+        white-space: pre-wrap; /* Respects newlines in details string */
+        line-height: 1.4; /* Improve readability of multi-line details */
+    }
+
     /* Importance Styling */
     .importance-goal {
         color: #155724;
@@ -106,15 +120,16 @@
 </style>
 
 <script>
-    // The structure of logs is now: [[{'minute': 0, 'message': '...', 'importance': '...'}, ...], ...]
+    // The structure of logs is now: [[{'minute': 0, 'message': '...', 'importance': '...', 'details': '...'}, ...], ...]
     const logs = {{ results | map(attribute='log') | list | tojson }};
 
+    // This loop now starts ALL simulations as soon as the page loads.
     {% for result in results %}
     {% set idx = loop.index0 %}
     const logData{{ idx }} = logs[{{ idx }}] || [];
     const logDiv{{ idx }} = document.getElementById('match-log-{{ idx }}');
     let i{{ idx }} = 0;
-    let isRunning{{ idx }} = false; // Flag to manage execution state
+    let isRunning{{ idx }} = false;
 
     function showNext{{ idx }}() {
         if (i{{ idx }} < logData{{ idx }}.length) {
@@ -123,10 +138,6 @@
             entryDiv.classList.add('log-entry');
             entryDiv.classList.add('importance-' + entry.importance);
 
-            const messageSpan = document.createElement('span');
-            messageSpan.textContent = entry.message;
-
-            // Add minute visualization if applicable
             if (!['info', 'final', 'error'].includes(entry.importance) && entry.minute > 0) {
                 const minuteSpan = document.createElement('span');
                 minuteSpan.classList.add('log-minute');
@@ -134,52 +145,45 @@
                 entryDiv.appendChild(minuteSpan);
             }
 
-            entryDiv.appendChild(messageSpan);
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('log-content');
+
+            const messageSpan = document.createElement('span');
+            messageSpan.textContent = entry.message;
+            contentDiv.appendChild(messageSpan);
+
+            if (entry.details && entry.details.trim() !== '') {
+                const detailsDiv = document.createElement('div');
+                detailsDiv.classList.add('log-details');
+                detailsDiv.textContent = entry.details;
+                contentDiv.appendChild(detailsDiv);
+            }
+
+            entryDiv.appendChild(contentDiv);
             logDiv{{ idx }}.appendChild(entryDiv);
 
-            // Trigger the transition (CSS animation)
             setTimeout(() => entryDiv.classList.add('visible'), 10);
-
-            // Auto-scroll
             logDiv{{ idx }}.scrollTop = logDiv{{ idx }}.scrollHeight;
-
             i{{ idx }}++;
 
-            // Dynamic timeout for better pacing (much faster than the original 8000ms)
-            let timeout = 500; // Fast pace for normal events (0.5s)
-            if (entry.importance === 'goal') {
-                timeout = 2500; // Long pause for goals (2.5s)
-            } else if (entry.importance === 'info' or entry.importance === 'final') {
-                timeout = 1000; // Pause for summaries (1s)
-            } else if (entry.message.includes('opportunity') or entry.importance === 'save') {
-                timeout = 1500; // Pause for critical moments (1.5s)
-            }
+            let timeout = 500;
+            if (entry.importance === 'goal') timeout = 2500;
+            else if (entry.importance === 'info' || entry.importance === 'final') timeout = 1000;
+            else if (entry.event_type === 'SHOT_OPPORTUNITY' || entry.importance === 'save') timeout = 1500;
 
             setTimeout(showNext{{ idx }}, timeout);
         }
     }
 
-    // Logic to start the simulation display
-    const collapseElement{{ idx }} = document.getElementById('collapse{{ idx }}');
-
-    // Start the first one immediately if it's open
-    {% if idx == 0 %}
-        if (!isRunning{{ idx }}) {
-            isRunning{{ idx }} = true;
-            showNext{{ idx }}();
-        }
-    {% endif %}
-
-    // Start others when their accordion tab is opened
-    if (collapseElement{{ idx }}) {
-        collapseElement{{ idx }}.addEventListener('shown.bs.collapse', function () {
-            if (!isRunning{{ idx }}) {
-                isRunning{{ idx }} = true;
-                showNext{{ idx }}();
-            }
-        });
+    // *** MODIFIED LOGIC ***
+    // Automatically start the simulation display function for this specific loop index.
+    // This will fire for all simulations concurrently on page load.
+    if (!isRunning{{ idx }}) {
+        isRunning{{ idx }} = true;
+        // Add a slight, staggered delay to the start of each simulation
+        // so they don't all fire on the exact same millisecond.
+        setTimeout(() => showNext{{ idx }}(), {{ idx }} * 100);
     }
-
     {% endfor %}
 </script>
 {% endblock %}
