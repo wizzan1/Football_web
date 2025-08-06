@@ -1,3 +1,5 @@
+# textfootball/blueprints/game/routes.py
+
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
 from textfootball import db
 from textfootball.models import User, Team, Player, Position, Message
@@ -7,28 +9,46 @@ from datetime import datetime
 from textfootball.core.match_simulator import simulate_match, get_prematch_odds, MatchTeam
 
 game_bp = Blueprint('game', __name__)
+
 MAX_TEAMS = 3
 
 FIRST_NAMES = ["Erik", "Lars", "Mikael", "Anders", "Johan", "Karl", "Fredrik"]
 LAST_NAMES = ["Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson"]
 
-
 def _generate_starter_squad(team):
+    """
+    Generates a starter squad for a new team, now including penalty-related skills.
+    """
     positions = [Position.GOALKEEPER]*2 + [Position.DEFENDER]*6 + [Position.MIDFIELDER]*7 + [Position.FORWARD]*5
     random.shuffle(positions)
     available_numbers = list(range(1, 21))
     random.shuffle(available_numbers)
     for i in range(20):
         skill = random.randint(30, 70)
-        # NEW: Generate Free Kick ability: Correlated with skill but with high variance
+        current_pos = positions[i]
+
+        # Free Kick ability: Correlated with skill but with high variance
         fk_ability = max(10, min(99, skill + random.randint(-15, 30)))
+        
+        # NEW: Penalty Taking: Similar correlation to FK ability, representing composure.
+        pen_taking = max(10, min(99, skill + random.randint(-20, 20)))
+        
+        # NEW: Penalty Saving: Highly dependent on position. Goalkeepers are specialized.
+        if current_pos == Position.GOALKEEPER:
+            # Goalkeepers are naturally good at this
+            pen_saving = max(40, min(90, skill + random.randint(5, 30)))
+        else:
+            # Outfield players are generally poor at saving penalties
+            pen_saving = random.randint(5, 25)
 
         player = Player(
             name=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
             age=random.randint(18, 32),
-            position=positions[i],
+            position=current_pos,
             skill=skill,
-            free_kick_ability=fk_ability, # Initialize new attribute
+            free_kick_ability=fk_ability,
+            penalty_taking=pen_taking,
+            penalty_saving=pen_saving,
             potential=random.randint(60, 95),
             shape=random.randint(70, 100),
             shirt_number=available_numbers.pop(),
@@ -36,13 +56,11 @@ def _generate_starter_squad(team):
         )
         db.session.add(player)
 
-
 @game_bp.route('/')
 def index():
     if 'username' in session:
         return redirect(url_for('game.dashboard'))
     return render_template('index.html')
-
 
 @game_bp.route('/dashboard')
 def dashboard():
@@ -50,7 +68,6 @@ def dashboard():
         return redirect(url_for('auth_bp.login'))
     user = User.query.filter_by(username=session['username']).first()
     return render_template('dashboard.html', user=user, max_teams=MAX_TEAMS)
-
 
 @game_bp.route('/team/<int:team_id>')
 def team_page(team_id):
@@ -63,9 +80,8 @@ def team_page(team_id):
         session['selected_team_id'] = team.id
     position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
     sorted_players = sorted(team.players, key=lambda p: (position_order[p.position], p.shirt_number))
-    # Note: The user must update team_page.html to display the new FK attribute.
+    # Note: The user must update team_page.html to display the new penalty attributes.
     return render_template('team_page.html', team=team, players=sorted_players, is_owner=is_owner)
-
 
 @game_bp.route('/delete-team/<int:team_id>', methods=['POST'])
 def delete_team(team_id):
@@ -82,7 +98,6 @@ def delete_team(team_id):
     if 'selected_team_id' in session and session['selected_team_id'] == team_id:
         session.pop('selected_team_id')
     return redirect(url_for('game.dashboard'))
-
 
 @game_bp.route('/create-team', methods=['GET', 'POST'])
 def create_team():
@@ -102,11 +117,11 @@ def create_team():
         new_team = Team(name=team_name, country=country, user_id=user.id)
         db.session.add(new_team)
         db.session.commit()
+        # This function now generates penalty skills
         _generate_starter_squad(new_team)
         db.session.commit()
         return redirect(url_for('game.dashboard'))
     return render_template('create_team.html')
-
 
 @game_bp.route('/player/<int:player_id>')
 def player_page(player_id):
@@ -115,14 +130,12 @@ def player_page(player_id):
     player = Player.query.get_or_404(player_id)
     user = User.query.filter_by(username=session['username']).first()
     is_owner = (player.team.user_id == user.id)
-    # Note: The user must update player_page.html to display the new FK attribute.
+    # Note: The user must update player_page.html to display the new penalty attributes.
     return render_template('player_page.html', player=player, is_owner=is_owner)
-
 
 @game_bp.route('/coming-soon')
 def coming_soon():
     return render_template('coming_soon.html')
-
 
 @game_bp.route('/search', methods=['GET', 'POST'])
 def search():
@@ -138,7 +151,6 @@ def search():
             teams = Team.query.filter(Team.name.ilike(f'%{query}%')).all()
     return render_template('search.html', query=query, users=users, teams=teams)
 
-
 @game_bp.route('/user/<username>')
 def user_profile(username):
     if 'username' not in session:
@@ -146,31 +158,49 @@ def user_profile(username):
     profile_user = User.query.filter_by(username=username).first_or_404()
     return render_template('user_profile.html', profile_user=profile_user)
 
-
 @game_bp.route('/challenge/<int:team_id>', methods=['POST'])
 def challenge_team(team_id):
+    """
+    Handles challenges between teams. Now accepts a 'match_type' form parameter
+    to determine if the match is a knockout game requiring a shootout on a draw.
+    """
     if 'username' not in session:
         return redirect(url_for('auth_bp.login'))
+
     challenged_team = Team.query.get_or_404(team_id)
     user = User.query.filter_by(username=session['username']).first()
+
     if challenged_team.user_id == user.id:
         flash("You cannot challenge your own team.", "danger")
         return redirect(url_for('game.team_page', team_id=team_id))
+
     if 'selected_team_id' not in session:
         flash("Select one of your teams first to challenge with.", "warning")
         return redirect(url_for('game.dashboard'))
+
     challenger_team = Team.query.get(session['selected_team_id'])
+
     if challenger_team is None or challenger_team.user_id != user.id:
         flash("Invalid selected team.", "danger")
         return redirect(url_for('game.team_page', team_id=team_id))
+
     num_sims = int(request.form.get('num_sims', 1))
     num_sims = max(1, min(num_sims, 10))
+    
+    # NEW: Check if the match is a 'knockout' type from the form.
+    # The 'why': This allows the user to trigger matches that require a winner,
+    # enabling cup competitions or high-stakes single matches.
+    is_knockout = request.form.get('match_type') == 'knockout'
+
     results = []
     for _ in range(num_sims):
-        sim_result = simulate_match(challenger_team.id, challenged_team.id)
+        # NEW: The is_knockout flag is passed to the simulation engine.
+        sim_result = simulate_match(challenger_team.id, challenged_team.id, is_knockout=is_knockout)
         results.append(sim_result)
-    return render_template('match_result.html', results=results)
-
+        
+    # The user must update match_result.html to display shootout scores if they exist.
+    # Passing is_knockout to the template can help with conditional rendering.
+    return render_template('match_result.html', results=results, is_knockout=is_knockout)
 
 @game_bp.route('/mailbox')
 def mailbox():
@@ -180,7 +210,6 @@ def mailbox():
     received = Message.query.filter_by(recipient_id=user.id).order_by(Message.timestamp.desc()).all()
     sent = Message.query.filter_by(sender_id=user.id).order_by(Message.timestamp.desc()).all()
     return render_template('mailbox.html', received=received, sent=sent)
-
 
 @game_bp.route('/compose', methods=['GET', 'POST'])
 def compose():
@@ -206,7 +235,6 @@ def compose():
     recipient = request.args.get('recipient', '')
     return render_template('compose.html', recipient=recipient)
 
-
 @game_bp.route('/mail/<int:message_id>')
 def view_mail(message_id):
     if 'username' not in session:
@@ -221,7 +249,6 @@ def view_mail(message_id):
         db.session.commit()
     return render_template('view_mail.html', message=message)
 
-
 @game_bp.route('/delete_mail/<int:message_id>', methods=['POST'])
 def delete_mail(message_id):
     if 'username' not in session:
@@ -235,7 +262,6 @@ def delete_mail(message_id):
     db.session.commit()
     flash("Message deleted successfully.", "success")
     return redirect(url_for('game.mailbox'))
-
 
 @game_bp.route('/accept_challenge/<int:message_id>', methods=['POST'])
 def accept_challenge(message_id):
@@ -253,9 +279,10 @@ def accept_challenge(message_id):
     response = Message(sender_id=user.id, recipient_id=message.sender_id, subject=f"Re: {message.subject}", body=f"{user.username} has accepted your challenge.")
     db.session.add(response)
     db.session.commit()
-    results = [simulate_match(message.challenger_team_id, message.challenged_team_id)]
-    return render_template('match_result.html', results=results)
-
+    # Assuming challenges are friendly (not knockout) unless specified otherwise.
+    # For a more advanced system, the match type could be stored in the message.
+    results = [simulate_match(message.challenger_team_id, message.challenged_team_id, is_knockout=False)]
+    return render_template('match_result.html', results=results, is_knockout=False)
 
 @game_bp.route('/simulate')
 def simulate():
@@ -272,7 +299,6 @@ def simulate():
         enemies.append({'team': team, 'odds': odds})
     return render_template('simulate.html', enemies=enemies, has_selected_team=(user_team_id is not None))
 
-
 @game_bp.route('/workbench')
 def workbench():
     if 'username' not in session:
@@ -286,8 +312,18 @@ def workbench():
     user = User.query.filter_by(username=session['username']).first()
     user_team = Team.query.get(user_team_id)
 
+    # FIX: Add a check to ensure the team was actually found in the database.
+    # The 'why': The session could contain an ID for a team that has since been deleted.
+    # This check prevents an AttributeError if Team.query.get() returns None.
+    if not user_team:
+        flash("The selected team could not be found. It may have been deleted. Please select another team.", "warning")
+        # Clean up the bad ID from the session
+        session.pop('selected_team_id', None)
+        return redirect(url_for('game.dashboard'))
+
+    # This check is now safe because we know user_team is not None.
     if user_team.user_id != user.id:
-        flash("Invalid selected team.", "danger")
+        flash("You do not own this team. Please select one of your teams.", "danger")
         session.pop('selected_team_id', None)
         return redirect(url_for('game.dashboard'))
 
@@ -301,13 +337,12 @@ def workbench():
     starting_11_ids = set(session['workbench_fixed_lineup_ids'])
     all_other_teams = Team.query.filter(Team.id != user_team_id).order_by(Team.name).all()
 
-    # Note: The user must update balancing_workbench.html to allow editing the new 'free_kick_ability'.
+    # Note: The user must update balancing_workbench.html to allow editing the new penalty attributes.
     return render_template('balancing_workbench.html',
                            user_team=user_team,
                            all_players=all_players,
                            starting_11_ids=starting_11_ids,
                            all_other_teams=all_other_teams)
-
 
 @game_bp.route('/recalculate_odds', methods=['POST'])
 def recalculate_odds():
@@ -327,12 +362,13 @@ def recalculate_odds():
     if not user_team_model or not enemy_team_model:
         return jsonify({'error': 'Invalid team ID provided'}), 404
 
-    # Update modified_stats to include the new attribute
+    # Update modified_stats to include the new attributes
     modified_stats = {
         int(p['id']): {
             'skill': int(p['skill']),
             'shape': int(p['shape']),
-            'free_kick_ability': int(p.get('free_kick_ability', 50)) # Handle FK ability
+            'free_kick_ability': int(p.get('free_kick_ability', 50)),
+            'penalty_taking': int(p.get('penalty_taking', 50)) # Handle penalty taking
         } for p in data['user_team_players']
     }
 
@@ -341,19 +377,18 @@ def recalculate_odds():
             player.skill = modified_stats[player.id]['skill']
             player.shape = modified_stats[player.id]['shape']
             player.free_kick_ability = modified_stats[player.id]['free_kick_ability']
+            player.penalty_taking = modified_stats[player.id]['penalty_taking']
 
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
     odds = get_prematch_odds(user_team_model=user_team_model, enemy_team_model=enemy_team_model, fixed_user_lineup_ids=fixed_lineup_ids)
 
-    db.session.expunge(user_team_model)
+    db.session.expunge_all() # Expunge all to avoid keeping temporary changes
     return jsonify(odds)
-
 
 @game_bp.route('/batch_odds', methods=['POST'])
 def batch_odds():
     """
-    Runs the analytical simulator X times (each call to get_prematch_odds runs its own internal simulations)
-    and returns mean and standard deviation across the X runs for BOTH teams (User and Enemy), split by Home/Away.
+    Runs the analytical simulator X times and returns aggregate statistics.
     """
     if 'username' not in session:
         return jsonify({'error': 'Authentication required'}), 401
@@ -374,12 +409,13 @@ def batch_odds():
     if not user_team_model or not enemy_team_model:
         return jsonify({'error': 'Invalid team ID provided'}), 404
 
-    # Apply temporary edits (in-memory only) - Updated for FK ability
+    # Apply temporary edits (in-memory only) - Updated for new attributes
     modified_stats = {
         int(p['id']): {
             'skill': int(p['skill']),
             'shape': int(p['shape']),
-            'free_kick_ability': int(p.get('free_kick_ability', 50)) # Handle FK ability
+            'free_kick_ability': int(p.get('free_kick_ability', 50)),
+            'penalty_taking': int(p.get('penalty_taking', 50))
         } for p in data['user_team_players']
     }
     for player in user_team_model.players:
@@ -387,6 +423,7 @@ def batch_odds():
             player.skill = modified_stats[player.id]['skill']
             player.shape = modified_stats[player.id]['shape']
             player.free_kick_ability = modified_stats[player.id]['free_kick_ability']
+            player.penalty_taking = modified_stats[player.id]['penalty_taking']
 
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
 
@@ -442,7 +479,7 @@ def batch_odds():
         stddevs = {k: (statistics.pstdev(v) if len(v) > 1 else 0.0) for k, v in acc.items()}
         return {'means': means, 'stddevs': stddevs}
 
-    db.session.expunge(user_team_model)
+    db.session.expunge_all() # Expunge all to avoid keeping temporary changes
 
     return jsonify({
         'runs': runs,

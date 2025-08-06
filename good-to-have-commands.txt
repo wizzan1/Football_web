@@ -13,3 +13,32 @@ flask shell
 from app import db, models
 db.create_all()
 exit()
+
+
+
+
+
+
+
+
+
+
+Nya DB skapa:
+
+flask shell
+
+# The shell is now running at the >>> prompt.
+
+# WRONG: from app import db, models
+# RIGHT: We import from 'textfootball' now.
+from textfootball import db
+from textfootball.models.user import User
+from textfootball.models.team import Team
+from textfootball.models.player import Player, Position
+from textfootball.models.message import Message
+
+# Now create the tables
+db.create_all()
+
+# And exit
+exit()
