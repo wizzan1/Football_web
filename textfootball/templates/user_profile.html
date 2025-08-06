@@ -13,7 +13,7 @@
                 {% for team in profile_user.teams %}
                     <li class="list-group-item d-flex justify-content-between align-items-center">
                         <div>
-                            <h5 class="mb-1"><a href="{{ url_for('game_bp.team_page', team_id=team.id) }}">{{ team.name }}</a></h5>
+                            <h5 class="mb-1"><a href="{{ url_for('game.team_page', team_id=team.id) }}">{{ team.name }}</a></h5>
                             <small class="d-block">{{ team.country }}</small>
                             <small>
                                 <span class="badge bg-secondary me-1">Liga: {{ team.league or 'None' }}</span>
@@ -28,20 +28,23 @@
             <p>No teams.</p>
         {% endif %}
         
-        {% if profile_user.username != session.username %}
-        <h3>Send Message</h3>
-        <form method="POST" action="{{ url_for('game_bp.send_message', username=profile_user.username) }}">
-            <div class="mb-3">
-                <label for="subject" class="form-label">Subject</label>
-                <input type="text" class="form-control" id="subject" name="subject" required>
-            </div>
-            <div class="mb-3">
-                <label for="body" class="form-label">Message</label>
-                <textarea class="form-control" id="body" name="body" rows="5" required></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary">Send</button>
-        </form>
-        {% endif %}
+		{% if profile_user.username != session.username %}
+		<h3>Send Message</h3>
+		<form method="POST" action="{{ url_for('game.compose') }}">
+			
+			<input type="hidden" name="recipient" value="{{ profile_user.username }}">
+			
+			<div class="mb-3">
+				<label for="subject" class="form-label">Subject</label>
+				<input type="text" class="form-control" id="subject" name="subject" required>
+			</div>
+			<div class="mb-3">
+				<label for="body" class="form-label">Message</label>
+				<textarea class="form-control" id="body" name="body" rows="5" required></textarea>
+			</div>
+			<button type="submit" class="btn btn-primary">Send</button>
+		</form>
+		{% endif %}
     </div>
 </div>
 {% endblock %}

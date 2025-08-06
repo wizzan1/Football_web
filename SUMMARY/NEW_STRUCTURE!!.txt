@@ -1,0 +1,97 @@
+Directory Structure
+textfootball_game_web/
+├── textfootball/
+│   ├── __init__.py
+│   ├── blueprints/
+│   │   ├── __init__.py
+│   │   ├── auth/
+│   │   │   ├── __init__.py
+│   │   │   └── routes.py
+│   │   └── game/
+│   │       ├── __init__.py
+│   │       └── routes.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   └── match_simulator.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── message.py
+│   │   ├── player.py
+│   │   ├── team.py
+│   │   └── user.py
+│   └── templates/
+│       ├── balancing_workbench.html
+│       ├── base.html
+│       ├── coming_soon.html
+│       ├── compose.html
+│       ├── create_team.html
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       ├── mailbox.html
+│       ├── match_result.html
+│       ├── player_page.html
+│       ├── register.html
+│       ├── search.html
+│       ├── simulate.html
+│       ├── team_page.html
+│       ├── user_profile.html
+│       └── view_mail.html
+├── instance/
+│   └── database.db
+├── tests/
+│   ├── __init__.py
+│   └── test_config.py
+├── .gitignore
+├── config.py
+├── README.md
+├── requirements.txt
+└── run.py
+File Breakdown
+run.py: The main entry point to start the application. It imports the create_app factory from the textfootball package and the desired configuration from config.py, then runs the resulting Flask application.
+
+config.py: A dedicated configuration file that defines settings for different environments (e.g., DevelopmentConfig, TestingConfig). This separates configuration from code, allowing for easy management of secret keys and database URIs for development, testing, and production.
+
+instance/: A standard Flask folder for instance-specific data that should not be in version control.
+
+database.db: The SQLite database file. Moving it here prevents it from being accidentally committed and keeps the main application package clean.
+
+tests/: A dedicated package for all automated tests, keeping test code separate from application code for a clean and professional testing workflow.
+
+textfootball/: The primary Python package containing all core application logic. It is organized into sub-packages for maximum clarity and scalability.
+
+textfootball/__init__.py: The application factory. This file contains the create_app() function which:
+
+Initializes the Flask application.
+
+Loads the appropriate configuration from the config.py object.
+
+Initializes extensions like SQLAlchemy (db).
+
+Imports and registers all blueprints from the textfootball.blueprints package.
+
+Contains application-wide logic like context processors (e.g., for injecting the current team) and custom Jinja filters.
+
+textfootball/core/: A package for core business logic that is not directly related to web routes or database models. This decouples the "brains" of the application for easier testing and potential reuse.
+
+match_simulator.py: The core simulation engine for the entire game. The engine is event-driven, blending open-play mechanics with a detailed Free Kick System. It contains modes for both detailed single-match simulation and high-speed Monte Carlo analysis.
+
+textfootball/models/: A package containing all SQLAlchemy database model definitions. The original models.py has been split into one file per model for improved organization and maintainability.
+
+user.py: Defines the User model for account information.
+
+team.py: Defines the Team model.
+
+player.py: Defines the Player model and related Enums. It contains the crucial effective_skill and effective_fk_ability properties.
+
+message.py: Defines the Message model for private messages.
+
+textfootball/blueprints/: A package that organizes the application's routes into modular, feature-based blueprints.
+
+auth/routes.py: A blueprint dedicated to all user authentication. Manages routes for /register, /login, and /logout.
+
+game/routes.py: The main blueprint for all core gameplay features and URLs, such as the dashboard, team management, challenges, messaging, and the Balancing Workbench.
+
+textfootball/templates/: The directory containing all user-facing Jinja2 HTML templates for the application.
+
+requirements.txt: A text file listing all the Python package dependencies required to run the project.

@@ -1,0 +1,88 @@
+Complete Project Architecture & File Breakdown
+Directory Structure
+textfootball_game_web/
+├── app/
+│   ├── __init__.py
+│   ├── match_sim.py
+│   ├── models.py
+│   ├── routes_auth.py
+│   ├── routes_game.py
+│   ├── database.db
+│   └── templates/
+│       ├── balancing_workbench.html
+│       ├── base.html
+│       ├── coming_soon.html
+│       ├── compose.html
+│       ├── create_team.html
+│       ├── dashboard.html
+│       ├── index.html
+│       ├── login.html
+│       ├── mailbox.html
+│       ├── match_result.html
+│       ├── player_page.html
+│       ├── register.html
+│       ├── search.html
+│       ├── simulate.html
+│       ├── team_page.html
+│       ├── user_profile.html
+│       └── view_mail.html
+├── .gitignore
+├── README.md
+├── requirements.txt
+└── run.py
+File Breakdown
+run.py: The main entry point to start the application. It imports the create_app factory from the app package and runs the resulting Flask application.
+
+app/: The primary Python package containing all core application logic, models, routes, and templates.
+
+app/__init__.py: The application factory. This file contains the create_app() function which initializes the Flask application, configures the secret key and the SQLAlchemy database URI, initializes the database object (db), and registers all the route blueprints (auth_bp, game_bp). It also includes a context processor to inject the user's currently selected team into all templates, allowing the navigation bar to display persistent team context.
+
+app/match_sim.py: The core simulation engine for the entire game. The engine is now event-driven, blending open-play mechanics with a new, detailed Free Kick System.
+
+Free Kick System: Before each match begins, the simulator pre-generates a realistic number of free kick events based on statistical averages. Each event is assigned a minute, a team, and a zone on the pitch (Deep, Middle, Attacking, Dangerous). During the match, the simulation loop processes these scheduled events at their designated minute. A free kick can resolve into:
+
+Direct Shot: A direct attempt on goal, pitting the taker's effective_fk_ability against the keeper's skill. The probability is heavily influenced by the zone (distance).
+
+Indirect Attack: A cross or forward pass that immediately triggers the standard attacking sequence, but with a modifier that makes the defense slightly more vulnerable.
+
+Safe Restart: The team keeps possession and play resets to midfield.
+
+Story-Telling Mode (simulate_match): Runs a single, detailed match simulation with full, rich event logging for both open play and all free kick outcomes.
+
+Analytical Mode (get_prematch_odds): A high-speed Monte Carlo analysis tool that runs hundreds of lightweight simulations (including the new free kick logic) to calculate win/draw/loss probabilities.
+
+MatchTeam Class: A helper class that prepares a team for a match. It calculates all key metrics and now also identifies the team's best free_kick_taker to be used for set-piece events.
+
+app/models.py: Defines the database schema using SQLAlchemy ORM classes.
+
+User: Stores user account information.
+
+Team: Stores information for a football team.
+
+Player: Stores all attributes for an individual player, such as name, age, position, skill, shape, and the new free_kick_ability. It contains the crucial effective_skill property (for open play) and the new effective_fk_ability property (for set pieces), both of which are foundational metrics for the simulation.
+
+Message: Stores private messages between users.
+
+app/routes_auth.py: A Flask Blueprint dedicated to handling all user authentication. It manages the routes for /register, /login, and /logout.
+
+app/routes_game.py: The main Flask Blueprint for all core gameplay features and URLs.
+
+_generate_starter_squad: Now initializes newly created players with a randomized free_kick_ability stat.
+
+/workbench: Renders the Balancing Workbench UI. Note: The template must be updated to display and allow editing of the new free_kick_ability attribute.
+
+/recalculate_odds & /batch_odds: AJAX-driven endpoints for the Balancing Workbench. They now accept and apply temporary free_kick_ability values (in addition to skill and shape) to players for on-the-fly simulation analysis without altering the database.
+
+All other routes for core gameplay loops like challenges, team management, and messaging remain.
+
+app/database.db: The SQLite database file storing all persistent data. The schema now includes the free_kick_ability column in the player table.
+
+app/templates/: The directory containing all user-facing Jinja2 HTML templates.
+
+balancing_workbench.html: The template for the Simulation Sandbox. (Requires UI elements to edit the new free_kick_ability stat).
+
+team_page.html & player_page.html: Templates for viewing team and player details. (Should be updated to display the new free_kick_ability stat).
+
+All other templates for providing the application's user interface.
+
+requirements.txt: A text file listing all the Python package dependencies required to run the project.

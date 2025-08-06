@@ -9,7 +9,7 @@
         <p class="card-text">Adjust your team's stats in real-time and see the immediate impact on match outcome probabilities. Changes here are for simulation only and will not be saved.</p>
         {% if not user_team %}
         <div class="alert alert-warning" role="alert">
-            You must have a team selected to use the workbench. Please go to your <a href="{{ url_for('game_bp.dashboard') }}" class="alert-link">Dashboard</a>.
+            You must have a team selected to use the workbench. Please go to your <a href="{{ url_for('game.dashboard') }}" class="alert-link">Dashboard</a>.
         </div>
         {% else %}
         <div class="row g-3">
@@ -194,7 +194,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const userTeamPlayers = collectUserTeamPlayers();
         try {
-            const response = await fetch("{{ url_for('game_bp.recalculate_odds') }}", {
+            const response = await fetch("{{ url_for('game.recalculate_odds') }}", {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify({ enemy_team_id: enemyTeamId, user_team_players: userTeamPlayers })
@@ -370,7 +370,7 @@ document.addEventListener('DOMContentLoaded', function () {
         batchResults.innerHTML = '';
 
         try {
-            const response = await fetch("{{ url_for('game_bp.batch_odds') }}", {
+            const response = await fetch("{{ url_for('game.batch_odds') }}", {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify(payload)

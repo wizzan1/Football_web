@@ -1,12 +1,12 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
-from app import db
-from .models import User, Team, Player, Position, Message
+from textfootball import db
+from textfootball.models import User, Team, Player, Position, Message
 import random
 import statistics
 from datetime import datetime
-from .match_sim import simulate_match, get_prematch_odds, MatchTeam
+from textfootball.core.match_simulator import simulate_match, get_prematch_odds, MatchTeam
 
-game_bp = Blueprint('game_bp', __name__)
+game_bp = Blueprint('game', __name__)
 MAX_TEAMS = 3
 
 FIRST_NAMES = ["Erik", "Lars", "Mikael", "Anders", "Johan", "Karl", "Fredrik"]
@@ -40,7 +40,7 @@ def _generate_starter_squad(team):
 @game_bp.route('/')
 def index():
     if 'username' in session:
-        return redirect(url_for('game_bp.dashboard'))
+        return redirect(url_for('game.dashboard'))
     return render_template('index.html')
 
 
@@ -75,13 +75,13 @@ def delete_team(team_id):
     user = User.query.filter_by(username=session['username']).first()
     if team.user_id != user.id:
         flash("You do not have permission to do that.", "danger")
-        return redirect(url_for('game_bp.dashboard'))
+        return redirect(url_for('game.dashboard'))
     db.session.delete(team)
     db.session.commit()
     flash(f"Team '{team.name}' has been deleted.", "success")
     if 'selected_team_id' in session and session['selected_team_id'] == team_id:
         session.pop('selected_team_id')
-    return redirect(url_for('game_bp.dashboard'))
+    return redirect(url_for('game.dashboard'))
 
 
 @game_bp.route('/create-team', methods=['GET', 'POST'])
@@ -91,20 +91,20 @@ def create_team():
     user = User.query.filter_by(username=session['username']).first()
     if len(user.teams) >= MAX_TEAMS:
         flash(f"You have reached the maximum of {MAX_TEAMS} teams.", "warning")
-        return redirect(url_for('game_bp.dashboard'))
+        return redirect(url_for('game.dashboard'))
     if request.method == 'POST':
         team_name = request.form.get('name')
         country = request.form.get('country')
         existing_team = Team.query.filter_by(name=team_name).first()
         if existing_team:
             flash('That team name is already taken.', "danger")
-            return redirect(url_for('game_bp.create_team'))
+            return redirect(url_for('game.create_team'))
         new_team = Team(name=team_name, country=country, user_id=user.id)
         db.session.add(new_team)
         db.session.commit()
         _generate_starter_squad(new_team)
         db.session.commit()
-        return redirect(url_for('game_bp.dashboard'))
+        return redirect(url_for('game.dashboard'))
     return render_template('create_team.html')
 
 
@@ -155,14 +155,14 @@ def challenge_team(team_id):
     user = User.query.filter_by(username=session['username']).first()
     if challenged_team.user_id == user.id:
         flash("You cannot challenge your own team.", "danger")
-        return redirect(url_for('game_bp.team_page', team_id=team_id))
+        return redirect(url_for('game.team_page', team_id=team_id))
     if 'selected_team_id' not in session:
         flash("Select one of your teams first to challenge with.", "warning")
-        return redirect(url_for('game_bp.dashboard'))
+        return redirect(url_for('game.dashboard'))
     challenger_team = Team.query.get(session['selected_team_id'])
     if challenger_team is None or challenger_team.user_id != user.id:
         flash("Invalid selected team.", "danger")
-        return redirect(url_for('game_bp.team_page', team_id=team_id))
+        return redirect(url_for('game.team_page', team_id=team_id))
     num_sims = int(request.form.get('num_sims', 1))
     num_sims = max(1, min(num_sims, 10))
     results = []
@@ -202,7 +202,7 @@ def compose():
         db.session.add(message)
         db.session.commit()
         flash('Your message has been sent.', 'success')
-        return redirect(url_for('game_bp.mailbox'))
+        return redirect(url_for('game.mailbox'))
     recipient = request.args.get('recipient', '')
     return render_template('compose.html', recipient=recipient)
 
@@ -215,7 +215,7 @@ def view_mail(message_id):
     user = User.query.filter_by(username=session['username']).first()
     if message.recipient_id != user.id and message.sender_id != user.id:
         flash("You do not have permission to view this message.", "danger")
-        return redirect(url_for('game_bp.mailbox'))
+        return redirect(url_for('game.mailbox'))
     if message.recipient_id == user.id and not message.is_read:
         message.is_read = True
         db.session.commit()
@@ -230,11 +230,11 @@ def delete_mail(message_id):
     message = Message.query.get_or_404(message_id)
     if message.sender_id != user.id and message.recipient_id != user.id:
         flash("You do not have permission to delete this message.", "danger")
-        return redirect(url_for('game_bp.mailbox'))
+        return redirect(url_for('game.mailbox'))
     db.session.delete(message)
     db.session.commit()
     flash("Message deleted successfully.", "success")
-    return redirect(url_for('game_bp.mailbox'))
+    return redirect(url_for('game.mailbox'))
 
 
 @game_bp.route('/accept_challenge/<int:message_id>', methods=['POST'])
@@ -245,10 +245,10 @@ def accept_challenge(message_id):
     user = User.query.filter_by(username=session['username']).first()
     if message.recipient_id != user.id or not message.is_challenge:
         flash("Invalid challenge.", "danger")
-        return redirect(url_for('game_bp.mailbox'))
+        return redirect(url_for('game.mailbox'))
     if message.is_accepted:
         flash("Challenge already accepted.", "info")
-        return redirect(url_for('game_bp.view_mail', message_id=message_id))
+        return redirect(url_for('game.view_mail', message_id=message_id))
     message.is_accepted = True
     response = Message(sender_id=user.id, recipient_id=message.sender_id, subject=f"Re: {message.subject}", body=f"{user.username} has accepted your challenge.")
     db.session.add(response)
@@ -281,7 +281,7 @@ def workbench():
     user_team_id = session.get('selected_team_id')
     if not user_team_id:
         flash("Please select a team from the dashboard to use the Balancing Workbench.", "warning")
-        return redirect(url_for('game_bp.dashboard'))
+        return redirect(url_for('game.dashboard'))
 
     user = User.query.filter_by(username=session['username']).first()
     user_team = Team.query.get(user_team_id)
@@ -289,7 +289,7 @@ def workbench():
     if user_team.user_id != user.id:
         flash("Invalid selected team.", "danger")
         session.pop('selected_team_id', None)
-        return redirect(url_for('game_bp.dashboard'))
+        return redirect(url_for('game.dashboard'))
 
     match_team_instance = MatchTeam(user_team)
     starting_11 = match_team_instance.get_starting_11()

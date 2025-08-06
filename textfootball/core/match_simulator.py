@@ -2,7 +2,7 @@
 import random
 import math
 # Note: We rely on the models having access to the DB context (e.g., Team.query.get)
-from .models import Team, Player, Position
+from textfootball.models import Team, Player, Position
 
 # ===========================
 # Configuration / Tunables

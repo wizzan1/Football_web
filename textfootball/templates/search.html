@@ -12,7 +12,7 @@
             <ul class="list-group mb-4">
                 {% for user in users %}
                     <li class="list-group-item">
-                        <a href="{{ url_for('game_bp.user_profile', username=user.username) }}">{{ user.username }}</a>
+                        <a href="{{ url_for('game.user_profile', username=user.username) }}">{{ user.username }}</a>
                     </li>
                 {% endfor %}
             </ul>
@@ -25,7 +25,7 @@
             <ul class="list-group">
                 {% for team in teams %}
                     <li class="list-group-item">
-                        <a href="{{ url_for('game_bp.team_page', team_id=team.id) }}">{{ team.name }}</a> ({{ team.country }})
+                        <a href="{{ url_for('game.team_page', team_id=team.id) }}">{{ team.name }}</a> ({{ team.country }})
                     </li>
                 {% endfor %}
             </ul>

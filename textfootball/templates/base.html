@@ -21,7 +21,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('game_bp.index') }}">TextFootball</a>
+            <a class="navbar-brand" href="{{ url_for('game.index') }}">TextFootball</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -29,14 +29,14 @@
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     {% if 'username' in session %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('game_bp.dashboard') }}">Dashboard</a>
+                            <a class="nav-link" href="{{ url_for('game.dashboard') }}">Dashboard</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('game_bp.mailbox') }}">Mailbox</a>
+                            <a class="nav-link" href="{{ url_for('game.mailbox') }}">Mailbox</a>
                         </li>
                         <!-- ### NEW WORKBENCH LINK ### -->
                         <li class="nav-item">
-                            <a class="nav-link text-warning" href="{{ url_for('game_bp.workbench') }}"><i class="bi bi-tools"></i> Workbench</a>
+                            <a class="nav-link text-warning" href="{{ url_for('game.workbench') }}"><i class="bi bi-tools"></i> Workbench</a>
                         </li>
                     {% endif %}
                 </ul>
@@ -48,7 +48,7 @@
                 {% endif %}
 
                 {% if 'username' in session %}
-                    <form class="d-flex" action="{{ url_for('game_bp.search') }}" method="POST">
+                    <form class="d-flex" action="{{ url_for('game.search') }}" method="POST">
                         <input class="form-control me-2" type="search" placeholder="Search Users/Teams" aria-label="Search" name="query">
                         <button class="btn btn-outline-success" type="submit">Search</button>
                     </form>
@@ -58,19 +58,19 @@
                                 {{ session['username'] }}
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
-                                <li><a class="dropdown-item" href="{{ url_for('game_bp.user_profile', username=session['username']) }}">Profile</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('game.user_profile', username=session['username']) }}">Profile</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('auth_bp.logout') }}">Logout</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Logout</a></li>
                             </ul>
                         </li>
                     </ul>
                 {% else %}
                     <ul class="navbar-nav">
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('auth_bp.login') }}">Login</a>
+                            <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('auth_bp.register') }}">Register</a>
+                            <a class="nav-link" href="{{ url_for('auth.register') }}">Register</a>
                         </li>
                     </ul>
                 {% endif %}

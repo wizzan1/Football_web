@@ -62,7 +62,7 @@
     <div class="card-body">
         {% if not has_selected_team %}
         <div class="alert alert-warning" role="alert">
-            Please select one of your teams from the <a href="{{ url_for('game_bp.dashboard') }}" class="alert-link">Dashboard</a> to see match predictions and issue challenges.
+            Please select one of your teams from the <a href="{{ url_for('game.dashboard') }}" class="alert-link">Dashboard</a> to see match predictions and issue challenges.
         </div>
         {% else %}
         <div class="alert alert-info small">
@@ -78,7 +78,7 @@
                     <div><h5 class="mb-1">{{ enemy.team.name }} ({{ enemy.team.country }})</h5></div>
                     {% if has_selected_team %}
                     <!-- MODIFIED: Form now includes the number of sims input again -->
-                    <form method="POST" action="{{ url_for('game_bp.challenge_team', team_id=enemy.team.id) }}">
+                    <form method="POST" action="{{ url_for('game.challenge_team', team_id=enemy.team.id) }}">
                         <div class="input-group input-group-sm">
                             <input type="number" name="num_sims" class="form-control" min="1" max="10" value="1" title="Number of matches to simulate">
                             <button type="submit" class="btn btn-primary btn-sm">Challenge</button>

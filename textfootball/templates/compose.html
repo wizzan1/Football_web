@@ -7,7 +7,7 @@
         <h1 class="h2 mb-0">Compose New Message</h1>
     </div>
     <div class="card-body">
-        <form method="POST" action="{{ url_for('game_bp.compose') }}">
+        <form method="POST" action="{{ url_for('game.compose') }}">
             <div class="mb-3">
                 <label for="recipient" class="form-label">Recipient Username</label>
                 <input type="text" class="form-control" id="recipient" name="recipient" required>
@@ -21,7 +21,7 @@
                 <textarea class="form-control" id="body" name="body" rows="10" required></textarea>
             </div>
             <button type="submit" class="btn btn-primary">Send Message</button>
-            <a href="{{ url_for('game_bp.mailbox') }}" class="btn btn-secondary">Cancel</a>
+            <a href="{{ url_for('game.mailbox') }}" class="btn btn-secondary">Cancel</a>
         </form>
     </div>
 </div>

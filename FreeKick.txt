@@ -1,0 +1,2017 @@
+Complete Project Architecture & File Breakdown
+
+Directory Structure
+
+Generated code
+
+textfootball_game_web/
+
+├── app/
+
+│ ├── init.py
+
+│ ├── match_sim.py
+
+│ ├── models.py
+
+│ ├── routes_auth.py
+
+│ ├── routes_game.py
+
+│ ├── database.db
+
+│ └── templates/
+
+│ ├── balancing_workbench.html <-- NEW FILE
+
+│ ├── base.html
+
+│ ├── coming_soon.html
+
+│ ├── compose.html
+
+│ ├── create_team.html
+
+│ ├── dashboard.html
+
+│ ├── index.html
+
+│ ├── login.html
+
+│ ├── mailbox.html
+
+│ ├── match_result.html
+
+│ ├── player_page.html
+
+│ ├── register.html
+
+│ ├── search.html
+
+│ ├── simulate.html
+
+│ ├── team_page.html
+
+│ ├── user_profile.html
+
+│ └── view_mail.html
+
+├── .gitignore
+
+├── README.md
+
+├── requirements.txt
+
+└── run.py
+
+Use code with caution.
+
+File Breakdown
+
+run.py: The main entry point to start the application. It imports the create_app factory from the app package and runs the resulting Flask application.
+
+app/: The primary Python package containing all core application logic, models, routes, and templates.
+
+app/init.py: The application factory. This file contains the create_app() function which initializes the Flask application, configures the secret key and the SQLAlchemy database URI, initializes the database object (db), and registers all the route blueprints (auth_bp, game_bp). It also includes a context processor to inject the user's currently selected team into all templates, allowing the navigation bar to display persistent team context.
+
+app/match_sim.py: The core simulation engine for the entire game, operating in two distinct modes.
+
+Analytical Mode (get_prematch_odds): A high-speed Monte Carlo analysis tool. It runs hundreds of lightweight simulations to calculate win/draw/loss probabilities. It can be called with team IDs or with modified, in-memory team objects, making it the powerhouse behind the Balancing Workbench. It supports an optional fixed_user_lineup_ids parameter to lock a specific starting 11 for simulations (e.g., in the workbench to ensure only selected players are used, ignoring bench swaps). It returns a comprehensive report for both home and away fixtures.
+
+Story-Telling Mode (simulate_match): Runs a single, detailed match simulation with full event logging enabled. It generates a rich, step-by-step log of the match, including explicit calculations for how home advantage boosts zonal strengths (Base → Boosted), designed for the match result page.
+
+MatchTeam Class: A helper class that prepares a team for a match by calculating all key metrics: average base skill, shape, effective skill, and the final zonal strengths (GK, DEF, MID, FWD) that power the simulation. It now supports an optional fixed_lineup_ids parameter to enforce a specific starting 11 (bypassing automatic best-player selection), and includes a score attribute for tracking goals during simulations. It also provides the starting lineup in its stats dictionary for UI rendering.
+
+app/models.py: Defines the database schema using SQLAlchemy ORM classes.
+
+User: Stores user account information, including username and hashed password. It has one-to-many relationships with Team and Message.
+
+Team: Stores information for a football team, including its name and country, and links back to its owner (User). It has a one-to-many relationship with Player.
+
+Player: Stores all attributes for an individual player, such as name, age, position, skill, and shape. It contains the crucial effective_skill property (skill * (shape / 100)), which is the foundational metric for the simulation.
+
+Message: Stores private messages between users, with fields for sender, recipient, subject, and body, and flags for handling challenges.
+
+app/routes_auth.py: A Flask Blueprint dedicated to handling all user authentication. It manages the routes for /register, /login, and /logout.
+
+app/routes_game.py: The main Flask Blueprint for all core gameplay features and URLs.
+
+/workbench (New): Renders the balancing_workbench.html template. This is the user interface for the developer's "Simulation Sandbox", where they can edit player stats in real-time. It now computes the initial starting 11, stores their IDs in the session for fixed lineup enforcement, passes all players (sorted by position and skill) to the template, and identifies starting players for highlighting.
+
+/recalculate_odds (New): A POST-only, AJAX-driven endpoint that serves the Balancing Workbench. It receives temporary player stats, creates non-persistent, in-memory team models, retrieves fixed lineup IDs from the session, runs the get_prematch_odds analysis with fixed lineup enforcement, and returns the results as JSON. This allows for instant feedback without altering the database, while ensuring simulations use only the locked starting 11.
+
+/simulate: Renders the player-facing simulate.html template, which acts as the Pre-Match Analysis Dashboard.
+
+/challenge/<id>: Triggers one or more fully detailed story-mode simulations and renders the results.
+
+/mailbox, /mail/<id>, /compose, /delete_mail: A complete suite of routes that provide a fully functional in-game messaging system.
+
+app/database.db: The SQLite database file storing all persistent data.
+
+app/templates/: The directory containing all user-facing Jinja2 HTML templates.
+
+balancing_workbench.html (New): The template for the Simulation Sandbox. It features a three-panel layout: an editable list of the user's full squad (with starting players highlighted and a checkbox to toggle visibility of bench players for UX), a display for the selected enemy team, and a results panel. It uses JavaScript and AJAX to communicate with the /recalculate_odds endpoint, providing instant, real-time updates to the analysis as the developer tweaks player stats. Bench player edits do not affect odds due to fixed lineup logic.
+
+base.html: The master site template. It provides the overall page structure and includes the main navigation bar, which now contains a link to the new "Balancing Workbench".
+
+dashboard.html: The user's main landing page after login. It now features prominent, distinct links to both the player-facing "Pre-Match Analysis" page and the developer-focused "Balancing Workbench".
+
+simulate.html: The template for the player-facing Pre-Match Analysis Dashboard. It features a tabbed interface showing analyses for Home and Away fixtures, including the "Tale of the Tape" and win-probability bars.
+
+match_result.html: The template for displaying the detailed, story-mode simulation log.
+
+team_page.html: The team management hub. Displays a sortable list of all players on a team and allows the user to select that team as their active team for analysis and the workbench.
+
+player_page.html: A simple page showing the attributes of a single selected player.
+
+mailbox.html, view_mail.html, compose.html: Templates providing a full-featured private messaging and challenge system interface.
+
+login.html, register.html, create_team.html: Forms for account and team management.
+
+search.html, user_profile.html: Pages for social features.
+
+coming_soon.html: A placeholder for future features.
+
+requirements.txt: A text file listing all the Python package dependencies required to run the project.
+
+
+
+
+
+This is my football projects structure.
+
+
+
+Here are some of my .py files:
+
+
+
+match_sim
+
+
+
+# app/match_sim.py
+
+import random
+
+import math
+
+# Note: We rely on the models having access to the DB context (e.g., Team.query.get)
+
+from .models import Team, Player, Position
+
+
+
+# ===========================
+
+# Configuration / Tunables
+
+# ===========================
+
+
+
+# Formation used to pick starting 11
+
+FORMATION = {
+
+    Position.GOALKEEPER: 1,
+
+    Position.DEFENDER: 4,
+
+    Position.MIDFIELDER: 4,
+
+    Position.FORWARD: 2
+
+}
+
+
+
+# Home advantage multiplier
+
+# OLD: 1.01 (Negligible)
+
+# NEW: 1.06 (A meaningful 6% boost)
+
+HOME_ADVANTAGE_BOOST = 1.04
+
+
+
+# ----- Flow & scoring (non-GK specific) ---------------------------------------
+
+# We increase scaling factors (from 22) to flatten the sensitivity curve.
+
+
+
+# MIDFIELD_SCALING controls how often play advances.
+
+MIDFIELD_SCALING = 32
+
+
+
+# ATTACK_SCALING controls how often an attack turns into a shot opportunity.
+
+ATTACK_SCALING = 32
+
+
+
+# Legacy global shot scaling.
+
+SHOT_SCALING = 24
+
+
+
+# Global conversion multiplier.
+
+# OLD: 0.97
+
+# NEW: 1.00 (Set to 1.0 to help reach the target goal average, compensating for higher scaling)
+
+GOAL_CONVERSION_FACTOR = 1.00
+
+
+
+# -------------------------------
+
+# Goalkeeper-specific tuning knobs
+
+# -------------------------------
+
+
+
+# 1) GK contribution to defensive gate during chance creation.
+
+DEF_GK_BLEND = 0.18
+
+
+
+# 2) Dedicated GK scaling for shots.
+
+# OLD: 22
+
+# NEW: 30 (Increased to flatten the curve, but slightly less than Mid/Att)
+
+GK_SHOT_SCALING = 30
+
+
+
+# Shooter per-shot variance. (Kept as is, ±15%)
+
+SHOOTER_NOISE_MIN = 0.85
+
+SHOOTER_NOISE_MAX = 1.15
+
+
+
+# GK per-shot variance. (Kept as is, ±8%)
+
+GK_NOISE_MIN = 0.92
+
+GK_NOISE_MAX = 1.08
+
+
+
+
+
+def logistic_probability(strength_a, strength_b, scaling_factor):
+
+    """
+
+    Calculates the probability of A overcoming B using a logistic function.
+
+    CRITICAL CHANGE: Removed internal randomization (noise).
+
+    """
+
+    # rand_a = strength_a * random.uniform(0.85, 1.15) # REMOVED
+
+    # rand_b = strength_b * random.uniform(0.85, 1.15) # REMOVED
+
+    diff = strength_a - strength_b
+
+    try:
+
+        # Clamping the exponent to prevent extreme values and overflow errors
+
+        exponent = -diff / scaling_factor
+
+        if exponent > 10:
+
+            return 0.0
+
+        elif exponent < -10:
+
+            return 1.0
+
+        else:
+
+            return 1 / (1 + math.exp(exponent))
+
+    except OverflowError:
+
+        # Safeguard
+
+        return 1.0 if diff > 0 else 0.0
+
+
+
+
+
+def goal_probability(shooter_eff: float, keeper_eff: float) -> float:
+
+    """
+
+    Shooter vs GK probability model. We KEEP the noise here as it represents
+
+    individual variance in a high-stakes moment (the shot).
+
+    """
+
+    rand_shooter = shooter_eff * random.uniform(SHOOTER_NOISE_MIN, SHOOTER_NOISE_MAX)
+
+    rand_keeper = keeper_eff * random.uniform(GK_NOISE_MIN, GK_NOISE_MAX)
+
+    diff = rand_shooter - rand_keeper
+
+
+
+    try:
+
+        exponent = -diff / GK_SHOT_SCALING
+
+        if exponent > 10:
+
+            base = 0.0
+
+        elif exponent < -10:
+
+            base = 1.0
+
+        else:
+
+            base = 1 / (1 + math.exp(exponent))
+
+    except OverflowError:
+
+        base = 1.0 if diff > 0 else 0.0
+
+
+
+    # Ensure probability doesn't exceed 1.0
+
+    return min(1.0, base * GOAL_CONVERSION_FACTOR)
+
+
+
+
+
+# === MatchTeam Class (Included for completeness, minor change to default strength) ===
+
+
+
+class MatchTeam:
+
+    def __init__(self, team_model, is_home=False, fixed_lineup_ids=None):
+
+        self.team = team_model
+
+        self.is_home = is_home
+
+        self.fixed_lineup_ids = fixed_lineup_ids
+
+        self.lineup = {}
+
+        self.base_zonal_strength = {}
+
+        self.zonal_strength = {}
+
+        self.avg_shape = 0
+
+        self.avg_base_skill = 0
+
+        self.avg_effective_skill = 0
+
+        self.score = 0
+
+        self.select_lineup()
+
+        self.calculate_zonal_strength()
+
+
+
+    def get_starting_11(self):
+
+        return [p for players in self.lineup.values() for p in players]
+
+
+
+    def select_lineup(self):
+
+        if self.fixed_lineup_ids:
+
+            fixed_players = [p for p in self.team.players if p.id in self.fixed_lineup_ids]
+
+            self.lineup = {pos: [] for pos in Position}
+
+            for p in fixed_players:
+
+                self.lineup[p.position].append(p)
+
+        else:
+
+            # This now uses the updated effective_skill calculation from models.py
+
+            sorted_players = sorted(self.team.players, key=lambda p: p.effective_skill, reverse=True)
+
+            self.lineup = {pos: [] for pos in Position}
+
+            squad_count = 0
+
+            for pos, count in FORMATION.items():
+
+                candidates = [p for p in sorted_players if p.position == pos and p not in self.get_starting_11()]
+
+                selected = candidates[:count]
+
+                self.lineup[pos].extend(selected)
+
+                squad_count += len(selected)
+
+            if squad_count < 11:
+
+                remaining_players = [p for p in sorted_players if p not in self.get_starting_11()]
+
+                for player in remaining_players[:11 - squad_count]:
+
+                    self.lineup[player.position].append(player)
+
+
+
+        starting_11 = self.get_starting_11()
+
+        if starting_11:
+
+            self.avg_base_skill = sum(p.skill for p in starting_11) / len(starting_11)
+
+            self.avg_shape = sum(p.shape for p in starting_11) / len(starting_11)
+
+            self.avg_effective_skill = sum(p.effective_skill for p in starting_11) / len(starting_11)
+
+
+
+    def calculate_zonal_strength(self):
+
+        for pos in Position:
+
+            players = self.lineup.get(pos, [])
+
+            # OLD default: 10
+
+            # NEW default: 20 (A more reasonable baseline if a zone is somehow empty)
+
+            base_strength = sum(p.effective_skill for p in players) / len(players) if players else 20
+
+            self.base_zonal_strength[pos] = base_strength
+
+            self.zonal_strength[pos] = base_strength * HOME_ADVANTAGE_BOOST if self.is_home else base_strength
+
+
+
+    def get_random_player(self, positions):
+
+        candidates = [p for pos in positions for p in self.lineup.get(pos, [])]
+
+        return random.choice(candidates) if candidates else None
+
+
+
+    def get_goalkeeper(self):
+
+        gk_list = self.lineup.get(Position.GOALKEEPER, [])
+
+        return gk_list[0] if gk_list else None
+
+
+
+    def get_stats_dict(self):
+
+        return {
+
+            'name': self.team.name, 'is_home': self.is_home,
+
+            'avg_base_skill': self.avg_base_skill, 'avg_shape': self.avg_shape, 'avg_effective_skill': self.avg_effective_skill,
+
+            'base_zonal_strength': {pos.name: strength for pos, strength in self.base_zonal_strength.items()},
+
+            'zonal_strength': {pos.name: strength for pos, strength in self.zonal_strength.items()},
+
+            'lineup': [{'name': p.name, 'position': p.position.value, 'skill': p.skill, 'shape': p.shape, 'id': p.id} for p in self.get_starting_11()]
+
+        }
+
+
+
+# === MatchSimulator Class (Includes improved logging to show new constants) ===
+
+
+
+class MatchSimulator:
+
+    def __init__(self, team_a_model, team_b_model, logging_enabled=True, fixed_a_ids=None, fixed_b_ids=None):
+
+        self.team_a = MatchTeam(team_a_model, is_home=True, fixed_lineup_ids=fixed_a_ids)
+
+        self.team_b = MatchTeam(team_b_model, is_home=False, fixed_lineup_ids=fixed_b_ids)
+
+        self.logging_enabled = logging_enabled
+
+        self.log = []
+
+        self.minute = 0
+
+        self.zone = 'M'
+
+        self.possession = random.choice([self.team_a, self.team_b])
+
+
+
+    def log_event(self, message, importance='normal', event_type=None, details=None):
+
+        if not self.logging_enabled:
+
+            return
+
+        self.log.append({'minute': self.minute, 'message': message, 'importance': importance, 'event_type': event_type, 'details': details})
+
+
+
+    def simulate(self):
+
+        if len(self.team_a.get_starting_11()) < 11 or len(self.team_b.get_starting_11()) < 11:
+
+            self.log_event("Match abandoned due to insufficient players.", importance='error')
+
+            return self.get_results()
+
+
+
+        if self.logging_enabled:
+
+            self.log_event("Kickoff!", importance='info')
+
+
+
+        while self.minute < 90:
+
+            # Increased time increment slightly (1-5) -> (1-6) for slightly more variance
+
+            time_increment = random.randint(1, 6)
+
+            last_minute = self.minute
+
+            self.minute += time_increment
+
+            if self.minute > 90:
+
+                self.minute = 90
+
+
+
+            if self.logging_enabled and last_minute < 45 and self.minute >= 45:
+
+                self.log_event("Halftime", importance='info')
+
+
+
+            self.process_event()
+
+
+
+        if self.logging_enabled:
+
+            self.log_event(f"Full Time! Final score: {self.team_a.score} - {self.team_b.score}", importance='final')
+
+
+
+        return self.get_results()
+
+
+
+    def process_event(self):
+
+        if self.zone == 'M':
+
+            self.resolve_midfield_battle()
+
+        elif self.zone == 'A':
+
+            self.resolve_attack(self.team_a, self.team_b)
+
+        elif self.zone == 'B':
+
+            self.resolve_attack(self.team_b, self.team_a)
+
+
+
+    def resolve_midfield_battle(self):
+
+        attacker, defender = (self.possession, self.team_b) if self.possession == self.team_a else (self.possession, self.team_a)
+
+        att_str = attacker.zonal_strength[Position.MIDFIELDER]
+
+        def_str = defender.zonal_strength[Position.MIDFIELDER]
+
+
+
+        # Uses the updated logistic_probability (no noise) and new MIDFIELD_SCALING
+
+        prob = logistic_probability(att_str, def_str, MIDFIELD_SCALING)
+
+        roll = random.random()
+
+
+
+        if roll < prob:
+
+            self.zone = 'A' if attacker == self.team_a else 'B'
+
+            result_text = "Success"
+
+        else:
+
+            self.possession = defender
+
+            result_text = "Fail"
+
+
+
+        if self.logging_enabled:
+
+            # Improved logging to show the actual boost factor used and the scaling factor
+
+            att_d = f"{attacker.base_zonal_strength[Position.MIDFIELDER]:.1f} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {att_str:.1f}" if attacker.is_home else f"{att_str:.1f}"
+
+            def_d = f"{defender.base_zonal_strength[Position.MIDFIELDER]:.1f} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {def_str:.1f}" if defender.is_home else f"{def_str:.1f}"
+
+            details = (
+
+                f"Midfield (Scale: {MIDFIELD_SCALING}): {attacker.team.name} vs {defender.team.name}\n"
+
+                f"- Att Str: {att_d}\n"
+
+                f"- Def Str: {def_d}\n"
+
+                f"- Prob to Advance: {prob:.1%}\n"
+
+                f"- Roll: {roll:.3f} -> {result_text}"
+
+            )
+
+            message = f"{attacker.team.name} advances." if result_text == "Success" else f"{defender.team.name} wins the ball."
+
+            self.log_event(message, details=details)
+
+
+
+    def resolve_attack(self, attacker, defender):
+
+        att_str = attacker.zonal_strength[Position.FORWARD]
+
+
+
+        pure_def = defender.zonal_strength[Position.DEFENDER]
+
+        gk_str = defender.zonal_strength[Position.GOALKEEPER]
+
+        def_gate = (1.0 - DEF_GK_BLEND) * pure_def + DEF_GK_BLEND * gk_str
+
+
+
+        # Uses the updated logistic_probability (no noise) and new ATTACK_SCALING
+
+        prob = logistic_probability(att_str, def_gate, ATTACK_SCALING)
+
+        roll = random.random()
+
+
+
+        # Helper to format logging details (DRY principle)
+
+        def get_attack_details(success):
+
+            att_d = f"{attacker.base_zonal_strength[Position.FORWARD]:.1f} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {att_str:.1f}" if attacker.is_home else f"{att_str:.1f}"
+
+            def_base = f"{defender.base_zonal_strength[Position.DEFENDER]:.1f}"
+
+            gk_base = f"{defender.base_zonal_strength[Position.GOALKEEPER]:.1f}"
+
+            if defender.is_home:
+
+                def_d = f"{def_base} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {pure_def:.1f}"
+
+                gk_d = f"{gk_base} * {HOME_ADVANTAGE_BOOST:.2f} (H) -> {gk_str:.1f}"
+
+            else:
+
+                def_d = f"{pure_def:.1f}"
+
+                gk_d = f"{gk_str:.1f}"
+
+            return (
+
+                f"Attack (Scale: {ATTACK_SCALING}): {attacker.team.name} vs {defender.team.name}\n"
+
+                f"- Att Fwd: {att_d}\n"
+
+                f"- Def Gate: DEF {def_d} + GK {gk_d} (blend {DEF_GK_BLEND:.0%}) -> {def_gate:.1f}\n"
+
+                f"- Prob to Create Chance: {prob:.1%}\n"
+
+                f"- Roll: {roll:.3f} -> {'Success' if success else 'Fail'}"
+
+            )
+
+
+
+        if roll < prob:
+
+            if self.logging_enabled:
+
+                self.log_event(f"{attacker.team.name} creates a chance!", event_type='SHOT_OPPORTUNITY', details=get_attack_details(True))
+
+            self.resolve_shot(attacker, defender)
+
+        else:
+
+            self.possession = defender
+
+            self.zone = 'M'
+
+            if self.logging_enabled:
+
+                self.log_event(f"{defender.team.name}'s defense holds firm.", event_type='DEFENSIVE_STOP', details=get_attack_details(False))
+
+
+
+    def resolve_shot(self, attacker, defender):
+
+        shooter = attacker.get_random_player([Position.FORWARD, Position.MIDFIELDER])
+
+        goalkeeper = defender.get_goalkeeper()
+
+        if not shooter or not goalkeeper:
+
+            self.possession = defender
+
+            self.zone = 'M'
+
+            return
+
+
+
+        # Uses the updated goal_probability (with noise) and new GK_SHOT_SCALING/GOAL_CONVERSION_FACTOR
+
+        prob = goal_probability(shooter.effective_skill, goalkeeper.effective_skill)
+
+        roll = random.random()
+
+
+
+        if roll < prob:
+
+            attacker.score += 1
+
+            if self.logging_enabled:
+
+                details = (
+
+                    f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n"
+
+                    f"- GK Scaling: {GK_SHOT_SCALING}, Conv Factor: {GOAL_CONVERSION_FACTOR:.2f}\n"
+
+                    f"- Goal Prob: {prob:.1%}\n"
+
+                    f"- Roll: {roll:.3f} -> GOAL"
+
+                )
+
+                score_line = f"({self.team_a.score}-{self.team_b.score})"
+
+                self.log_event(f"GOAL! {shooter.name} scores! {score_line}", importance='goal', event_type='GOAL', details=details)
+
+        else:
+
+            if self.logging_enabled:
+
+                details = (
+
+                    f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n"
+
+                    f"- GK Scaling: {GK_SHOT_SCALING}, Conv Factor: {GOAL_CONVERSION_FACTOR:.2f}\n"
+
+                    f"- Goal Prob: {prob:.1%}\n"
+
+                    f"- Roll: {roll:.3f} -> NO GOAL"
+
+                )
+
+                self.log_event(f"NO GOAL! Shot by {shooter.name}.", importance='miss', event_type='MISS', details=details)
+
+
+
+        self.possession = defender
+
+        self.zone = 'M'
+
+
+
+    def get_results(self):
+
+        return {
+
+            'log': self.log,
+
+            'score_a': self.team_a.score,
+
+            'score_b': self.team_b.score,
+
+            'team_a_name': self.team_a.team.name,
+
+            'team_b_name': self.team_b.team.name
+
+        }
+
+
+
+
+
+# === Helper Functions (Included for completeness) ===
+
+# These functions rely on database access (Team.query.get).
+
+
+
+def simulate_match(team_a_id, team_b_id):
+
+    # Assuming Team.query works here (requires active app context)
+
+    team_a, team_b = Team.query.get(team_a_id), Team.query.get(team_b_id)
+
+    if not team_a or not team_b:
+
+        return {'log': [{'message': 'Invalid Teams'}], 'score_a': 0, 'score_b': 0, 'team_a_name': '?', 'team_b_name': '?'}
+
+    return MatchSimulator(team_a, team_b, logging_enabled=True).simulate()
+
+
+
+
+
+def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, user_team_model=None, enemy_team_model=None, fixed_user_lineup_ids=None):
+
+    if not user_team_model and user_team_id:
+
+        user_team_model = Team.query.get(user_team_id)
+
+    if not enemy_team_model and enemy_team_id:
+
+        enemy_team_model = Team.query.get(enemy_team_id)
+
+
+
+    if not user_team_model or not enemy_team_model:
+
+        return {'error': 'Invalid teams'}
+
+
+
+    # Calculate MatchTeam stats once
+
+    user_team_home = MatchTeam(user_team_model, is_home=True, fixed_lineup_ids=fixed_user_lineup_ids)
+
+    user_team_away = MatchTeam(user_team_model, is_home=False, fixed_lineup_ids=fixed_user_lineup_ids)
+
+    enemy_team_home = MatchTeam(enemy_team_model, is_home=True)
+
+    enemy_team_away = MatchTeam(enemy_team_model, is_home=False)
+
+
+
+    def _run_fixture_sims(home_team_model, away_team_model, fixed_home_ids=None, fixed_away_ids=None):
+
+        wins, draws, losses, goals_for, goals_against = 0, 0, 0, 0, 0
+
+        for _ in range(simulations):
+
+            # The simulator will now use the updated logic and constants
+
+            simulator = MatchSimulator(home_team_model, away_team_model, logging_enabled=False, fixed_a_ids=fixed_home_ids, fixed_b_ids=fixed_away_ids)
+
+            result = simulator.simulate()
+
+            goals_for += result['score_a']
+
+            goals_against += result['score_b']
+
+            if result['score_a'] > result['score_b']:
+
+                wins += 1
+
+            elif result['score_b'] > result['score_a']:
+
+                losses += 1
+
+            else:
+
+                draws += 1
+
+        return {
+
+            'win_prob': (wins / simulations) * 100,
+
+            'draw_prob': (draws / simulations) * 100,
+
+            'loss_prob': (losses / simulations) * 100,
+
+            'avg_goals_for': goals_for / simulations,
+
+            'avg_goals_against': goals_against / simulations
+
+        }
+
+
+
+    home_fixture_probs = _run_fixture_sims(user_team_model, enemy_team_model, fixed_home_ids=fixed_user_lineup_ids, fixed_away_ids=None)
+
+    away_fixture_probs = _run_fixture_sims(enemy_team_model, user_team_model, fixed_home_ids=None, fixed_away_ids=fixed_user_lineup_ids)
+
+
+
+    return {
+
+        'home_fixture': {
+
+            'probs': home_fixture_probs,
+
+            'stats': {'user_team': user_team_home.get_stats_dict(), 'enemy_team': enemy_team_away.get_stats_dict()}
+
+        },
+
+        'away_fixture': {
+
+            'probs': away_fixture_probs,
+
+            'stats': {'user_team': user_team_away.get_stats_dict(), 'enemy_team': enemy_team_home.get_stats_dict()}
+
+        },
+
+        'simulations_run': simulations
+
+    }
+
+
+
+
+
+routes_game
+
+
+
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
+
+from app import db
+
+from .models import User, Team, Player, Position, Message
+
+import random
+
+import statistics
+
+from datetime import datetime
+
+from .match_sim import simulate_match, get_prematch_odds, MatchTeam
+
+
+
+game_bp = Blueprint('game_bp', __name__)
+
+MAX_TEAMS = 3
+
+
+
+FIRST_NAMES = ["Erik", "Lars", "Mikael", "Anders", "Johan", "Karl", "Fredrik"]
+
+LAST_NAMES = ["Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson"]
+
+
+
+
+
+def _generate_starter_squad(team):
+
+    positions = [Position.GOALKEEPER]*2 + [Position.DEFENDER]*6 + [Position.MIDFIELDER]*7 + [Position.FORWARD]*5
+
+    random.shuffle(positions)
+
+    available_numbers = list(range(1, 21))
+
+    random.shuffle(available_numbers)
+
+    for i in range(20):
+
+        player = Player(
+
+            name=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
+
+            age=random.randint(18, 32),
+
+            position=positions[i],
+
+            skill=random.randint(30, 70),
+
+            potential=random.randint(60, 95),
+
+            shape=random.randint(70, 100),
+
+            shirt_number=available_numbers.pop(),
+
+            team_id=team.id
+
+        )
+
+        db.session.add(player)
+
+
+
+
+
+@game_bp.route('/')
+
+def index():
+
+    if 'username' in session:
+
+        return redirect(url_for('game_bp.dashboard'))
+
+    return render_template('index.html')
+
+
+
+
+
+@game_bp.route('/dashboard')
+
+def dashboard():
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    return render_template('dashboard.html', user=user, max_teams=MAX_TEAMS)
+
+
+
+
+
+@game_bp.route('/team/<int:team_id>')
+
+def team_page(team_id):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    team = Team.query.get_or_404(team_id)
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    is_owner = (team.user_id == user.id)
+
+    if is_owner:
+
+        session['selected_team_id'] = team.id
+
+    position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
+
+    sorted_players = sorted(team.players, key=lambda p: (position_order[p.position], p.shirt_number))
+
+    return render_template('team_page.html', team=team, players=sorted_players, is_owner=is_owner)
+
+
+
+
+
+@game_bp.route('/delete-team/<int:team_id>', methods=['POST'])
+
+def delete_team(team_id):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    team = Team.query.get_or_404(team_id)
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    if team.user_id != user.id:
+
+        flash("You do not have permission to do that.", "danger")
+
+        return redirect(url_for('game_bp.dashboard'))
+
+    db.session.delete(team)
+
+    db.session.commit()
+
+    flash(f"Team '{team.name}' has been deleted.", "success")
+
+    if 'selected_team_id' in session and session['selected_team_id'] == team_id:
+
+        session.pop('selected_team_id')
+
+    return redirect(url_for('game_bp.dashboard'))
+
+
+
+
+
+@game_bp.route('/create-team', methods=['GET', 'POST'])
+
+def create_team():
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    if len(user.teams) >= MAX_TEAMS:
+
+        flash(f"You have reached the maximum of {MAX_TEAMS} teams.", "warning")
+
+        return redirect(url_for('game_bp.dashboard'))
+
+    if request.method == 'POST':
+
+        team_name = request.form.get('name')
+
+        country = request.form.get('country')
+
+        existing_team = Team.query.filter_by(name=team_name).first()
+
+        if existing_team:
+
+            flash('That team name is already taken.', "danger")
+
+            return redirect(url_for('game_bp.create_team'))
+
+        new_team = Team(name=team_name, country=country, user_id=user.id)
+
+        db.session.add(new_team)
+
+        db.session.commit()
+
+        _generate_starter_squad(new_team)
+
+        db.session.commit()
+
+        return redirect(url_for('game_bp.dashboard'))
+
+    return render_template('create_team.html')
+
+
+
+
+
+@game_bp.route('/player/<int:player_id>')
+
+def player_page(player_id):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    player = Player.query.get_or_404(player_id)
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    is_owner = (player.team.user_id == user.id)
+
+    return render_template('player_page.html', player=player, is_owner=is_owner)
+
+
+
+
+
+@game_bp.route('/coming-soon')
+
+def coming_soon():
+
+    return render_template('coming_soon.html')
+
+
+
+
+
+@game_bp.route('/search', methods=['GET', 'POST'])
+
+def search():
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    query = ''
+
+    users = []
+
+    teams = []
+
+    if request.method == 'POST':
+
+        query = request.form.get('query', '')
+
+        if query:
+
+            users = User.query.filter(User.username.ilike(f'%{query}%')).all()
+
+            teams = Team.query.filter(Team.name.ilike(f'%{query}%')).all()
+
+    return render_template('search.html', query=query, users=users, teams=teams)
+
+
+
+
+
+@game_bp.route('/user/<username>')
+
+def user_profile(username):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    profile_user = User.query.filter_by(username=username).first_or_404()
+
+    return render_template('user_profile.html', profile_user=profile_user)
+
+
+
+
+
+@game_bp.route('/challenge/<int:team_id>', methods=['POST'])
+
+def challenge_team(team_id):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    challenged_team = Team.query.get_or_404(team_id)
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    if challenged_team.user_id == user.id:
+
+        flash("You cannot challenge your own team.", "danger")
+
+        return redirect(url_for('game_bp.team_page', team_id=team_id))
+
+    if 'selected_team_id' not in session:
+
+        flash("Select one of your teams first to challenge with.", "warning")
+
+        return redirect(url_for('game_bp.dashboard'))
+
+    challenger_team = Team.query.get(session['selected_team_id'])
+
+    if challenger_team is None or challenger_team.user_id != user.id:
+
+        flash("Invalid selected team.", "danger")
+
+        return redirect(url_for('game_bp.team_page', team_id=team_id))
+
+    num_sims = int(request.form.get('num_sims', 1))
+
+    num_sims = max(1, min(num_sims, 10))
+
+    results = []
+
+    for _ in range(num_sims):
+
+        sim_result = simulate_match(challenger_team.id, challenged_team.id)
+
+        results.append(sim_result)
+
+    return render_template('match_result.html', results=results)
+
+
+
+
+
+@game_bp.route('/mailbox')
+
+def mailbox():
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    received = Message.query.filter_by(recipient_id=user.id).order_by(Message.timestamp.desc()).all()
+
+    sent = Message.query.filter_by(sender_id=user.id).order_by(Message.timestamp.desc()).all()
+
+    return render_template('mailbox.html', received=received, sent=sent)
+
+
+
+
+
+@game_bp.route('/compose', methods=['GET', 'POST'])
+
+def compose():
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    if request.method == 'POST':
+
+        recipient_username = request.form.get('recipient')
+
+        subject = request.form.get('subject')
+
+        body = request.form.get('body')
+
+        sender = User.query.filter_by(username=session['username']).first()
+
+        recipient = User.query.filter_by(username=recipient_username).first()
+
+        if not recipient:
+
+            flash(f"User '{recipient_username}' not found.", 'danger')
+
+            return render_template('compose.html', subject=subject, body=body, recipient=recipient_username)
+
+        if recipient.id == sender.id:
+
+            flash("You cannot send a message to yourself.", 'warning')
+
+            return render_template('compose.html', subject=subject, body=body, recipient=recipient_username)
+
+        message = Message(sender_id=sender.id, recipient_id=recipient.id, subject=subject, body=body)
+
+        db.session.add(message)
+
+        db.session.commit()
+
+        flash('Your message has been sent.', 'success')
+
+        return redirect(url_for('game_bp.mailbox'))
+
+    recipient = request.args.get('recipient', '')
+
+    return render_template('compose.html', recipient=recipient)
+
+
+
+
+
+@game_bp.route('/mail/<int:message_id>')
+
+def view_mail(message_id):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    message = Message.query.get_or_404(message_id)
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    if message.recipient_id != user.id and message.sender_id != user.id:
+
+        flash("You do not have permission to view this message.", "danger")
+
+        return redirect(url_for('game_bp.mailbox'))
+
+    if message.recipient_id == user.id and not message.is_read:
+
+        message.is_read = True
+
+        db.session.commit()
+
+    return render_template('view_mail.html', message=message)
+
+
+
+
+
+@game_bp.route('/delete_mail/<int:message_id>', methods=['POST'])
+
+def delete_mail(message_id):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    message = Message.query.get_or_404(message_id)
+
+    if message.sender_id != user.id and message.recipient_id != user.id:
+
+        flash("You do not have permission to delete this message.", "danger")
+
+        return redirect(url_for('game_bp.mailbox'))
+
+    db.session.delete(message)
+
+    db.session.commit()
+
+    flash("Message deleted successfully.", "success")
+
+    return redirect(url_for('game_bp.mailbox'))
+
+
+
+
+
+@game_bp.route('/accept_challenge/<int:message_id>', methods=['POST'])
+
+def accept_challenge(message_id):
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    message = Message.query.get_or_404(message_id)
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    if message.recipient_id != user.id or not message.is_challenge:
+
+        flash("Invalid challenge.", "danger")
+
+        return redirect(url_for('game_bp.mailbox'))
+
+    if message.is_accepted:
+
+        flash("Challenge already accepted.", "info")
+
+        return redirect(url_for('game_bp.view_mail', message_id=message_id))
+
+    message.is_accepted = True
+
+    response = Message(sender_id=user.id, recipient_id=message.sender_id, subject=f"Re: {message.subject}", body=f"{user.username} has accepted your challenge.")
+
+    db.session.add(response)
+
+    db.session.commit()
+
+    results = [simulate_match(message.challenger_team_id, message.challenged_team_id)]
+
+    return render_template('match_result.html', results=results)
+
+
+
+
+
+@game_bp.route('/simulate')
+
+def simulate():
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    all_teams = Team.query.filter(Team.user_id != user.id).all()
+
+    user_team_id = session.get('selected_team_id')
+
+    enemies = []
+
+    for team in all_teams:
+
+        odds = None
+
+        if user_team_id:
+
+            odds = get_prematch_odds(user_team_id=user_team_id, enemy_team_id=team.id)
+
+        enemies.append({'team': team, 'odds': odds})
+
+    return render_template('simulate.html', enemies=enemies, has_selected_team=(user_team_id is not None))
+
+
+
+
+
+@game_bp.route('/workbench')
+
+def workbench():
+
+    if 'username' not in session:
+
+        return redirect(url_for('auth_bp.login'))
+
+
+
+    user_team_id = session.get('selected_team_id')
+
+    if not user_team_id:
+
+        flash("Please select a team from the dashboard to use the Balancing Workbench.", "warning")
+
+        return redirect(url_for('game_bp.dashboard'))
+
+
+
+    user = User.query.filter_by(username=session['username']).first()
+
+    user_team = Team.query.get(user_team_id)
+
+
+
+    if user_team.user_id != user.id:
+
+        flash("Invalid selected team.", "danger")
+
+        session.pop('selected_team_id', None)
+
+        return redirect(url_for('game_bp.dashboard'))
+
+
+
+    match_team_instance = MatchTeam(user_team)
+
+    starting_11 = match_team_instance.get_starting_11()
+
+    session['workbench_fixed_lineup_ids'] = [p.id for p in starting_11]
+
+
+
+    position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
+
+    all_players = sorted(user_team.players, key=lambda p: (position_order[p.position], -p.effective_skill))
+
+
+
+    starting_11_ids = set(session['workbench_fixed_lineup_ids'])
+
+    all_other_teams = Team.query.filter(Team.id != user_team_id).order_by(Team.name).all()
+
+
+
+    return render_template('balancing_workbench.html',
+
+                           user_team=user_team,
+
+                           all_players=all_players,
+
+                           starting_11_ids=starting_11_ids,
+
+                           all_other_teams=all_other_teams)
+
+
+
+
+
+@game_bp.route('/recalculate_odds', methods=['POST'])
+
+def recalculate_odds():
+
+    if 'username' not in session:
+
+        return jsonify({'error': 'Authentication required'}), 401
+
+
+
+    data = request.get_json()
+
+    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data:
+
+        return jsonify({'error': 'Invalid request data'}), 400
+
+
+
+    user_team_id = session.get('selected_team_id')
+
+    if not user_team_id:
+
+        return jsonify({'error': 'No team selected'}), 400
+
+
+
+    user_team_model = Team.query.get(user_team_id)
+
+    enemy_team_model = Team.query.get(data.get('enemy_team_id'))
+
+    if not user_team_model or not enemy_team_model:
+
+        return jsonify({'error': 'Invalid team ID provided'}), 404
+
+
+
+    modified_stats = {int(p['id']): {'skill': int(p['skill']), 'shape': int(p['shape'])} for p in data['user_team_players']}
+
+
+
+    for player in user_team_model.players:
+
+        if player.id in modified_stats:
+
+            player.skill = modified_stats[player.id]['skill']
+
+            player.shape = modified_stats[player.id]['shape']
+
+
+
+    fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
+
+    odds = get_prematch_odds(user_team_model=user_team_model, enemy_team_model=enemy_team_model, fixed_user_lineup_ids=fixed_lineup_ids)
+
+
+
+    db.session.expunge(user_team_model)
+
+    return jsonify(odds)
+
+
+
+
+
+@game_bp.route('/batch_odds', methods=['POST'])
+
+def batch_odds():
+
+    """
+
+    Runs the analytical simulator X times (each call to get_prematch_odds runs its own internal simulations)
+
+    and returns mean and standard deviation across the X runs for BOTH teams (User and Enemy), split by Home/Away.
+
+    """
+
+    if 'username' not in session:
+
+        return jsonify({'error': 'Authentication required'}), 401
+
+
+
+    data = request.get_json()
+
+    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data or 'runs' not in data:
+
+        return jsonify({'error': 'Invalid request data'}), 400
+
+
+
+    user_team_id = session.get('selected_team_id')
+
+    if not user_team_id:
+
+        return jsonify({'error': 'No team selected'}), 400
+
+
+
+    runs = int(data.get('runs', 10))
+
+    runs = max(1, min(runs, 100))
+
+
+
+    user_team_model = Team.query.get(user_team_id)
+
+    enemy_team_model = Team.query.get(data.get('enemy_team_id'))
+
+    if not user_team_model or not enemy_team_model:
+
+        return jsonify({'error': 'Invalid team ID provided'}), 404
+
+
+
+    # Apply temporary edits (in-memory only)
+
+    modified_stats = {int(p['id']): {'skill': int(p['skill']), 'shape': int(p['shape'])} for p in data['user_team_players']}
+
+    for player in user_team_model.players:
+
+        if player.id in modified_stats:
+
+            player.skill = modified_stats[player.id]['skill']
+
+            player.shape = modified_stats[player.id]['shape']
+
+
+
+    fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
+
+
+
+    # Accumulators
+
+    user_home_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+
+    user_away_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+
+    enemy_home_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+
+    enemy_away_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+
+
+
+    sims_per_run = None
+
+
+
+    for _ in range(runs):
+
+        res = get_prematch_odds(
+
+            user_team_model=user_team_model,
+
+            enemy_team_model=enemy_team_model,
+
+            fixed_user_lineup_ids=fixed_lineup_ids
+
+        )
+
+        sims_per_run = res.get('simulations_run', sims_per_run)
+
+
+
+        hf = res['home_fixture']['probs']  # user at home
+
+        af = res['away_fixture']['probs']  # enemy at home
+
+
+
+        # User perspective (home)
+
+        user_home_acc['win_prob'].append(float(hf['win_prob']))
+
+        user_home_acc['draw_prob'].append(float(hf['draw_prob']))
+
+        user_home_acc['loss_prob'].append(float(hf['loss_prob']))
+
+        user_home_acc['avg_goals_for'].append(float(hf['avg_goals_for']))
+
+        user_home_acc['avg_goals_against'].append(float(hf['avg_goals_against']))
+
+
+
+        # User perspective (away) — flip away fixture
+
+        user_away_acc['win_prob'].append(float(af['loss_prob']))
+
+        user_away_acc['draw_prob'].append(float(af['draw_prob']))
+
+        user_away_acc['loss_prob'].append(float(af['win_prob']))
+
+        user_away_acc['avg_goals_for'].append(float(af['avg_goals_against']))
+
+        user_away_acc['avg_goals_against'].append(float(af['avg_goals_for']))
+
+
+
+        # Enemy perspective (home) — away fixture as-is
+
+        enemy_home_acc['win_prob'].append(float(af['win_prob']))
+
+        enemy_home_acc['draw_prob'].append(float(af['draw_prob']))
+
+        enemy_home_acc['loss_prob'].append(float(af['loss_prob']))
+
+        enemy_home_acc['avg_goals_for'].append(float(af['avg_goals_for']))
+
+        enemy_home_acc['avg_goals_against'].append(float(af['avg_goals_against']))
+
+
+
+        # Enemy perspective (away) — flip user home fixture
+
+        enemy_away_acc['win_prob'].append(float(hf['loss_prob']))
+
+        enemy_away_acc['draw_prob'].append(float(hf['draw_prob']))
+
+        enemy_away_acc['loss_prob'].append(float(hf['win_prob']))
+
+        enemy_away_acc['avg_goals_for'].append(float(hf['avg_goals_against']))
+
+        enemy_away_acc['avg_goals_against'].append(float(hf['avg_goals_for']))
+
+
+
+    def summarize(acc):
+
+        means = {k: (statistics.fmean(v) if v else 0.0) for k, v in acc.items()}
+
+        stddevs = {k: (statistics.pstdev(v) if len(v) > 1 else 0.0) for k, v in acc.items()}
+
+        return {'means': means, 'stddevs': stddevs}
+
+
+
+    db.session.expunge(user_team_model)
+
+
+
+    return jsonify({
+
+        'runs': runs,
+
+        'simulations_per_run': sims_per_run,
+
+        'user_team_name': user_team_model.name,
+
+        'enemy_team_name': enemy_team_model.name,
+
+        'user': {
+
+            'home': summarize(user_home_acc),
+
+            'away': summarize(user_away_acc)
+
+        },
+
+        'enemy': {
+
+            'home': summarize(enemy_home_acc),
+
+            'away': summarize(enemy_away_acc)
+
+        }
+
+    })
+
+
+
+
+
+models.py:
+
+
+
+from app import db
+
+from werkzeug.security import generate_password_hash, check_password_hash
+
+import enum
+
+# We must use the standard library datetime here for database timestamps, 
+
+# as the environment might override 'datetime' for simulation purposes.
+
+import datetime as std_datetime
+
+
+
+class Position(enum.Enum):
+
+    GOALKEEPER = "Goalkeeper"
+
+    DEFENDER = "Defender"
+
+    MIDFIELDER = "Midfielder"
+
+    FORWARD = "Forward"
+
+
+
+class User(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    username = db.Column(db.String(80), unique=True, nullable=False)
+
+    password_hash = db.Column(db.String(128))
+
+    teams = db.relationship('Team', backref='user', lazy=True, cascade="all, delete-orphan")
+
+    sent_messages = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender', lazy=True, cascade="all, delete-orphan")
+
+    received_messages = db.relationship('Message', foreign_keys='Message.recipient_id', backref='recipient', lazy=True, cascade="all, delete-orphan")
+
+
+
+    def set_password(self, password):
+
+        self.password_hash = generate_password_hash(password)
+
+
+
+    def check_password(self, password):
+
+        return check_password_hash(self.password_hash, password)
+
+
+
+class Team(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    name = db.Column(db.String(100), unique=True, nullable=False)
+
+    country = db.Column(db.String(50), nullable=False)
+
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    players = db.relationship('Player', backref='team', lazy=True, cascade="all, delete-orphan")
+
+    league = db.Column(db.String(100), nullable=True, default=None)
+
+    division = db.Column(db.String(50), nullable=True, default=None)
+
+    season = db.Column(db.Integer, nullable=True, default=None)
+
+
+
+class Player(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    name = db.Column(db.String(100), nullable=False)
+
+    age = db.Column(db.Integer, nullable=False)
+
+    position = db.Column(db.Enum(Position), nullable=False)
+
+    skill = db.Column(db.Integer, nullable=False)
+
+    potential = db.Column(db.Integer, nullable=False)
+
+    shape = db.Column(db.Integer, nullable=False)
+
+    shirt_number = db.Column(db.Integer, nullable=False)
+
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+
+
+
+    # --- New Helper Method for Simulation ---
+
+    @property
+
+    def effective_skill(self):
+
+        # Skill is modified by current shape (stamina/fitness).
+
+        # OLD: return self.skill * (0.5 + (self.shape / 200.0))
+
+        # In the old model, 0 shape = 50% skill.
+
+
+
+        # NEW Model: More punitive. 0 shape = 30% skill, 100 shape = 100% skill.
+
+        # This makes fitness management and squad rotation crucial.
+
+        # Calculation: Base (0.3) + Variable (Shape/100 * 0.7)
+
+        shape_multiplier = 0.3 + (self.shape * 0.7 / 100.0)
+
+        return self.skill * shape_multiplier
+
+
+
+class Message(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    subject = db.Column(db.String(200), nullable=False)
+
+    body = db.Column(db.Text, nullable=False)
+
+    # Ensure standard UTC time for database records
+
+    timestamp = db.Column(db.DateTime, default=std_datetime.datetime.utcnow)
+
+    is_read = db.Column(db.Boolean, default=False)
+
+    challenger_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+
+    challenged_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+
+    is_challenge = db.Column(db.Boolean, default=False)
+
+    is_accepted = db.Column(db.Boolean, default=False)
+
+
+
+
+
+I want to add a new variable to my game engine. Lets add Free kick.  I want a free kick system implemented into the matches. Look at typical number of free kicks in a game in real world.. that should be the average, but it can vary of course. Also we need a system so that free kicks can have a chance of being different distance from the goal, the further away, lower the chance of a free kick will be a goal. If its a free kick in the middle of the field its veery unlikely that it will be a goal.. or if its on your own side of the field, its like imposible. I guess it should be lower chance also to get free kicks the closer to the goal, since that will increase the goal chances. I guess a nice way to start implementing this is to make a system that distributes the free kicks to the both teams, but we need to keep it intresting and not too fixed. Add this function as a professional programmer would do. Make it intresting and have some imagination . You are a professional programmer.
+
+
+
+Give me ONLY complete modified CODES to implement this. If you think we should make some new .py to not make our other .py files too long. Just tell me, and let me know the new structure of my project.

@@ -1,6 +1,9 @@
-from app import create_app
+# C:\...\my_football_game\HTML\run.py (Corrected)
 
-app = create_app()
+from textfootball import create_app # <-- THE ONLY CHANGE IS HERE
+from config import DevelopmentConfig
+
+app = create_app(config_class=DevelopmentConfig)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()

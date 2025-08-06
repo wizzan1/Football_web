@@ -5,7 +5,7 @@
 <div class="card shadow-sm">
     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
         <h1 class="h2 mb-0">{{ message.subject }}</h1>
-        <form method="POST" action="{{ url_for('game_bp.delete_mail', message_id=message.id) }}">
+        <form method="POST" action="{{ url_for('game.delete_mail', message_id=message.id) }}">
             <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete this message?');">
                 <i class="bi bi-trash"></i> Delete
             </button>
@@ -18,7 +18,7 @@
         <hr>
         <p>{{ message.body | nl2br }}</p>
         {% if message.is_challenge and not message.is_accepted and message.recipient.username == session.username %}
-        <form method="POST" action="{{ url_for('game_bp.accept_challenge', message_id=message.id) }}">
+        <form method="POST" action="{{ url_for('game.accept_challenge', message_id=message.id) }}">
             <button type="submit" class="btn btn-success">Accept Challenge</button>
         </form>
         {% elif message.is_challenge and message.is_accepted %}
