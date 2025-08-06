@@ -4,7 +4,7 @@
 <div class="row">
     <!-- Main content column -->
     <div class="col-md-12">
-        <!-- Sub-navigation for team management -->
+        <!-- Sub-navigation (remains the same) -->
         <ul class="nav nav-tabs mb-3">
             <li class="nav-item">
                 <a class="nav-link active" href="{{ url_for('game.team_page', team_id=team.id) }}">Squad</a>
@@ -20,15 +20,61 @@
                 <a class="nav-link" href="{{ url_for('game.coming_soon') }}">Tactics</a>
             </li>
             {% endif %}
-            <!-- Add more tabs as features are implemented -->
         </ul>
-        <div class="card shadow-sm">
+
+        <!-- NEW: Team Overview and Management Panel -->
+        <div class="card shadow-sm mb-4">
             <div class="card-header bg-dark text-white">
                 <h1 class="h2 mb-0">{{ team.name }} <small class="text-white-50">({{ team.country }})</small></h1>
             </div>
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h3 class="card-title mb-0">Squad List</h3>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h3 class="card-title">Team Status</h3>
+                        <p><strong>Average Morale:</strong> {{ team.average_morale | round(1) }}%</p>
+                        <p><strong>Atmosphere:</strong>
+                            {% set morale_desc = team.get_morale_description() %}
+                            <span class="badge 
+                                {% if morale_desc in ['Ecstatic', 'Confident', 'Good'] %}bg-success
+                                {% elif morale_desc == 'Stable' %}bg-secondary
+                                {% elif morale_desc in ['Low', 'Very Low'] %}bg-warning text-dark
+                                {% else %}bg-danger{% endif %}">
+                                {{ morale_desc }}
+                            </span>
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        {% if is_owner %}
+                        <h3 class="card-title">Management Actions</h3>
+                        <div class="card {% if not can_hold_meeting %}border-warning{% endif %}">
+                            <div class="card-header">
+                                Team Meeting
+                            </div>
+                            <div class="card-body">
+                                {% if can_hold_meeting %}
+                                <form action="{{ url_for('game.team_meeting', team_id=team.id) }}" method="POST" class="d-flex gap-2">
+                                    <button type="submit" name="action" value="PRAISE" class="btn btn-success btn-sm">Praise (Low Risk)</button>
+                                    <button type="submit" name="action" value="ENCOURAGE" class="btn btn-primary btn-sm">Encourage (Safe)</button>
+                                    <button type="submit" name="action" value="CRITICIZE" class="btn btn-danger btn-sm">Criticize (High Risk)</button>
+                                </form>
+                                {% else %}
+                                <p class="text-muted mb-0">Meeting on cooldown. {{ meeting_cooldown_text }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h3 class="card-title mb-0">Squad List</h3>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-end align-items-center mb-3">
                     <div>
                         <a href="{{ url_for('game.dashboard') }}" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-arrow-left"></i> Back to Dashboard
@@ -40,7 +86,7 @@
                         {% endif %}
                     </div>
                 </div>
-               
+                
                 <div class="table-responsive">
                     <table class="table table-striped table-hover mb-0">
                         <thead>
@@ -49,9 +95,13 @@
                                 <th>Name</th>
                                 <th>Age</th>
                                 <th>Position</th>
+                                <!-- NEW Columns -->
+                                <th>Morale</th>
+                                <th>Personality</th>
+                                <!-- End NEW Columns -->
                                 <th>Skill</th>
-                                <th>Potential (UV)</th>
                                 <th>Shape</th>
+                                <th>Potential (UV)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -61,9 +111,33 @@
                                 <td><a href="{{ url_for('game.player_page', player_id=player.id) }}">{{ player.name }}</a></td>
                                 <td>{{ player.age }}</td>
                                 <td>{{ player.position.value }}</td>
+                                
+                                <!-- NEW Data Cells -->
+                                <td>
+                                    <div class="progress" style="height: 20px; width: 100px;">
+                                        <div class="progress-bar 
+                                            {% if player.morale >= 75 %}bg-success
+                                            {% elif player.morale >= 50 %}bg-warning
+                                            {% else %}bg-danger{% endif %}" 
+                                            role="progressbar" style="width: {{ player.morale }}%" aria-valuenow="{{ player.morale }}" aria-valuemin="0" aria-valuemax="100">
+                                            {{ player.morale }}%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                     <span class="badge 
+                                        {% if player.personality.value == 'Professional' %}bg-primary
+                                        {% elif player.personality.value == 'Ambitious' %}bg-success
+                                        {% elif player.personality.value == 'Stoic' %}bg-info
+                                        {% elif player.personality.value == 'Volatile' %}bg-danger{% endif %}">
+                                        {{ player.personality.value }}
+                                    </span>
+                                </td>
+                                <!-- End NEW Data Cells -->
+
                                 <td>{{ player.skill }}</td>
-                                <td>{{ player.potential }}</td>
                                 <td>{{ player.shape }}%</td>
+                                <td>{{ player.potential }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>

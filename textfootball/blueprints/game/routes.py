@@ -2,11 +2,19 @@
 
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
 from textfootball import db
-from textfootball.models import User, Team, Player, Position, Message
+# MODIFIED: Add Personality to the model imports
+from textfootball.models import User, Team, Player, Position, Message, Personality
 import random
 import statistics
 from datetime import datetime
-from textfootball.core.match_simulator import simulate_match, get_prematch_odds, MatchTeam
+# MODIFIED: Add the new morale constants to the simulator import
+from textfootball.core.match_simulator import (
+    simulate_match, get_prematch_odds, MatchTeam,
+    MORALE_BASE_WIN, MORALE_BASE_DRAW, MORALE_BASE_LOSS,
+    MORALE_MARGIN_THRESHOLD, MORALE_MARGIN_MULTIPLIER,
+    MORALE_GOAL_BONUS, MORALE_HAT_TRICK_BONUS,
+    MORALE_DRIFT_TARGET, MORALE_DRIFT_RATE
+)
 
 game_bp = Blueprint('game', __name__)
 
@@ -299,6 +307,8 @@ def simulate():
         enemies.append({'team': team, 'odds': odds})
     return render_template('simulate.html', enemies=enemies, has_selected_team=(user_team_id is not None))
 
+# textfootball/blueprints/game/routes.py
+
 @game_bp.route('/workbench')
 def workbench():
     if 'username' not in session:
@@ -312,16 +322,11 @@ def workbench():
     user = User.query.filter_by(username=session['username']).first()
     user_team = Team.query.get(user_team_id)
 
-    # FIX: Add a check to ensure the team was actually found in the database.
-    # The 'why': The session could contain an ID for a team that has since been deleted.
-    # This check prevents an AttributeError if Team.query.get() returns None.
     if not user_team:
         flash("The selected team could not be found. It may have been deleted. Please select another team.", "warning")
-        # Clean up the bad ID from the session
         session.pop('selected_team_id', None)
         return redirect(url_for('game.dashboard'))
 
-    # This check is now safe because we know user_team is not None.
     if user_team.user_id != user.id:
         flash("You do not own this team. Please select one of your teams.", "danger")
         session.pop('selected_team_id', None)
@@ -332,17 +337,34 @@ def workbench():
     session['workbench_fixed_lineup_ids'] = [p.id for p in starting_11]
 
     position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
+    # MODIFIED: Sort by the new morale-influenced effective_skill
     all_players = sorted(user_team.players, key=lambda p: (position_order[p.position], -p.effective_skill))
 
     starting_11_ids = set(session['workbench_fixed_lineup_ids'])
     all_other_teams = Team.query.filter(Team.id != user_team_id).order_by(Team.name).all()
 
-    # Note: The user must update balancing_workbench.html to allow editing the new penalty attributes.
+    # NEW: Create a dictionary of the default morale parameters
+    default_morale_params = {
+        'MORALE_BASE_WIN': MORALE_BASE_WIN,
+        'MORALE_BASE_LOSS': MORALE_BASE_LOSS,
+        'MORALE_BASE_DRAW': MORALE_BASE_DRAW,
+        'MORALE_MARGIN_THRESHOLD': MORALE_MARGIN_THRESHOLD,
+        'MORALE_MARGIN_MULTIPLIER': MORALE_MARGIN_MULTIPLIER,
+        'MORALE_GOAL_BONUS': MORALE_GOAL_BONUS,
+        'MORALE_HAT_TRICK_BONUS': MORALE_HAT_TRICK_BONUS,
+        'MORALE_DRIFT_TARGET': MORALE_DRIFT_TARGET,
+        'MORALE_DRIFT_RATE': MORALE_DRIFT_RATE
+    }
+
     return render_template('balancing_workbench.html',
                            user_team=user_team,
                            all_players=all_players,
                            starting_11_ids=starting_11_ids,
-                           all_other_teams=all_other_teams)
+                           all_other_teams=all_other_teams,
+                           # NEW: Pass the dictionary to the template
+                           default_morale_params=default_morale_params)
+
+# textfootball/blueprints/game/routes.py
 
 @game_bp.route('/recalculate_odds', methods=['POST'])
 def recalculate_odds():
@@ -350,7 +372,8 @@ def recalculate_odds():
         return jsonify({'error': 'Authentication required'}), 401
 
     data = request.get_json()
-    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data:
+    # MODIFIED: Check for the new morale_params in the request
+    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data or 'morale_params' not in data:
         return jsonify({'error': 'Invalid request data'}), 400
 
     user_team_id = session.get('selected_team_id')
@@ -361,40 +384,130 @@ def recalculate_odds():
     enemy_team_model = Team.query.get(data.get('enemy_team_id'))
     if not user_team_model or not enemy_team_model:
         return jsonify({'error': 'Invalid team ID provided'}), 404
+        
+    # NEW: Get the workbench's morale parameters from the request
+    morale_params_from_request = data.get('morale_params', {})
 
-    # Update modified_stats to include the new attributes
+    # MODIFIED: Update player stats to include all new editable attributes
     modified_stats = {
         int(p['id']): {
             'skill': int(p['skill']),
             'shape': int(p['shape']),
+            'morale': int(p['morale']), # NEW
+            'personality': p.get('personality'), # NEW
             'free_kick_ability': int(p.get('free_kick_ability', 50)),
-            'penalty_taking': int(p.get('penalty_taking', 50)) # Handle penalty taking
+            'penalty_taking': int(p.get('penalty_taking', 50))
         } for p in data['user_team_players']
     }
 
+    # MODIFIED: Apply all temporary changes from the workbench to the in-memory player objects
     for player in user_team_model.players:
         if player.id in modified_stats:
-            player.skill = modified_stats[player.id]['skill']
-            player.shape = modified_stats[player.id]['shape']
-            player.free_kick_ability = modified_stats[player.id]['free_kick_ability']
-            player.penalty_taking = modified_stats[player.id]['penalty_taking']
+            stats = modified_stats[player.id]
+            player.skill = stats['skill']
+            player.shape = stats['shape']
+            player.morale = stats['morale'] # NEW
+            player.free_kick_ability = stats['free_kick_ability']
+            player.penalty_taking = stats['penalty_taking']
+            # NEW: Safely update personality if it exists
+            if stats.get('personality'):
+                try:
+                    player.personality = Personality[stats['personality'].upper()]
+                except KeyError:
+                    pass # Ignore if personality is invalid
 
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
-    odds = get_prematch_odds(user_team_model=user_team_model, enemy_team_model=enemy_team_model, fixed_user_lineup_ids=fixed_lineup_ids)
+    
+    # MODIFIED: Pass the morale parameters from the request into the odds calculation
+    odds = get_prematch_odds(
+        user_team_model=user_team_model,
+        enemy_team_model=enemy_team_model,
+        fixed_user_lineup_ids=fixed_lineup_ids,
+        morale_params=morale_params_from_request
+    )
 
-    db.session.expunge_all() # Expunge all to avoid keeping temporary changes
+    db.session.expunge_all()
     return jsonify(odds)
 
-@game_bp.route('/batch_odds', methods=['POST'])
-def batch_odds():
+# textfootball/blueprints/game/routes.py
+
+# textfootball/blueprints/game/routes.py
+
+# Add this new function anywhere in the file after the other routes.
+
+@game_bp.route('/analyze_morale_settings', methods=['POST'])
+def analyze_morale_settings():
     """
-    Runs the analytical simulator X times and returns aggregate statistics.
+    Runs a sensitivity analysis on morale by simulating matches
+    across a range of morale values for the user's team.
     """
     if 'username' not in session:
         return jsonify({'error': 'Authentication required'}), 401
 
     data = request.get_json()
-    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data or 'runs' not in data:
+    # Validate the data needed for this specific analysis
+    if not all(k in data for k in ['enemy_team_id', 'user_team_players', 'morale_params', 'analysis_params']):
+        return jsonify({'error': 'Invalid request data for morale analysis'}), 400
+
+    user_team_id = session.get('selected_team_id')
+    if not user_team_id:
+        return jsonify({'error': 'No team selected'}), 400
+
+    # Get the team models from the database
+    user_team_model = Team.query.get(user_team_id)
+    enemy_team_model = Team.query.get(data.get('enemy_team_id'))
+    if not user_team_model or not enemy_team_model:
+        return jsonify({'error': 'Invalid team ID provided'}), 404
+
+    # Get the parameters for the analysis loop
+    analysis_params = data.get('analysis_params', {})
+    morale_start = int(analysis_params.get('start', 10))
+    morale_end = int(analysis_params.get('end', 100))
+    morale_step = int(analysis_params.get('step', 10))
+    
+    # Get other necessary data from the request
+    morale_params_from_request = data.get('morale_params', {})
+    fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
+    
+    results_over_morale = []
+
+    # Loop through the specified morale range
+    for current_morale in range(morale_start, morale_end + 1, morale_step):
+        # On each iteration, temporarily set every player's morale to the current value
+        # This isolates morale as the single changing variable.
+        for player in user_team_model.players:
+            player.morale = current_morale
+
+        # Run the standard odds calculation with this temporary morale value
+        odds = get_prematch_odds(
+            user_team_model=user_team_model,
+            enemy_team_model=enemy_team_model,
+            fixed_user_lineup_ids=fixed_lineup_ids,
+            morale_params=morale_params_from_request
+        )
+
+        # Store the results for this morale level
+        if 'error' not in odds:
+            results_over_morale.append({
+                'morale': current_morale,
+                'home_probs': odds['home_fixture']['probs'],
+                'away_probs': odds['away_fixture']['probs']
+            })
+
+    # Clear any temporary changes from the database session
+    db.session.expunge_all()
+
+    return jsonify({'analysis_results': results_over_morale})
+
+
+@game_bp.route('/batch_odds', methods=['POST'])
+def batch_odds():
+    if 'username' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json()
+    # MODIFIED: Check for the new morale_params in the request
+    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data or 'runs' not in data or 'morale_params' not in data:
         return jsonify({'error': 'Invalid request data'}), 400
 
     user_team_id = session.get('selected_team_id')
@@ -409,21 +522,36 @@ def batch_odds():
     if not user_team_model or not enemy_team_model:
         return jsonify({'error': 'Invalid team ID provided'}), 404
 
-    # Apply temporary edits (in-memory only) - Updated for new attributes
+    # NEW: Get the workbench's morale parameters from the request
+    morale_params_from_request = data.get('morale_params', {})
+
+    # MODIFIED: Update player stats to include all new editable attributes
     modified_stats = {
         int(p['id']): {
             'skill': int(p['skill']),
             'shape': int(p['shape']),
+            'morale': int(p['morale']), # NEW
+            'personality': p.get('personality'), # NEW
             'free_kick_ability': int(p.get('free_kick_ability', 50)),
             'penalty_taking': int(p.get('penalty_taking', 50))
         } for p in data['user_team_players']
     }
+    
+    # MODIFIED: Apply all temporary changes from the workbench to the in-memory player objects
     for player in user_team_model.players:
         if player.id in modified_stats:
-            player.skill = modified_stats[player.id]['skill']
-            player.shape = modified_stats[player.id]['shape']
-            player.free_kick_ability = modified_stats[player.id]['free_kick_ability']
-            player.penalty_taking = modified_stats[player.id]['penalty_taking']
+            stats = modified_stats[player.id]
+            player.skill = stats['skill']
+            player.shape = stats['shape']
+            player.morale = stats['morale'] # NEW
+            player.free_kick_ability = stats['free_kick_ability']
+            player.penalty_taking = stats['penalty_taking']
+            # NEW: Safely update personality if it exists
+            if stats.get('personality'):
+                try:
+                    player.personality = Personality[stats['personality'].upper()]
+                except KeyError:
+                    pass # Ignore if personality is invalid
 
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
 
@@ -495,3 +623,5 @@ def batch_odds():
             'away': summarize(enemy_away_acc)
         }
     })
+
+
