@@ -1,9 +1,5 @@
-# textfootball/core/match_simulator.py
-
 import random
 import math
-# NEW: Import Personality and db
-# We must ensure Personality is imported after it's defined in models.player
 from textfootball.models import Team, Player, Position, Personality
 from textfootball import db # We need db access to commit morale changes
 
@@ -11,7 +7,7 @@ from textfootball import db # We need db access to commit morale changes
 # Configuration / Tunables
 # ===========================
 
-# Formation (remains the same)
+# Formation
 FORMATION = {
     Position.GOALKEEPER: 1,
     Position.DEFENDER: 4,
@@ -19,15 +15,21 @@ FORMATION = {
     Position.FORWARD: 2
 }
 
-# Home advantage (remains the same)
+# Home advantage
 HOME_ADVANTAGE_BOOST = 1.03
 
-# Flow & scoring (remains the same)
+# Flow & scoring
 MIDFIELD_SCALING = 32
 ATTACK_SCALING = 32
-GOAL_CONVERSION_FACTOR = 0.8
+GOAL_CONVERSION_FACTOR_BASE = 1.0
 
-# Goalkeeper-specific (remains the same)
+# Shot Distance parameters
+SHOT_DISTANCE_MIN = 5   # Meters
+SHOT_DISTANCE_MAX = 35  # Meters
+OPTIMAL_SHOT_DISTANCE = 12
+DISTANCE_PENALTY_FACTOR = 0.03
+
+# Goalkeeper-specific
 DEF_GK_BLEND = 0.18
 GK_SHOT_SCALING = 30
 SHOOTER_NOISE_MIN = 0.85
@@ -35,53 +37,37 @@ SHOOTER_NOISE_MAX = 1.15
 GK_NOISE_MIN = 0.92
 GK_NOISE_MAX = 1.08
 
-# Free Kick (FK) Tuning Knobs (remains the same)
+# Free Kick (FK) Tuning Knobs
 AVG_FREE_KICKS_PER_GAME = 0
 FREE_KICK_VARIANCE = 0
 FK_ZONES = {
-    'DEEP':     (0.25, 0.00, 0.05, 1.00),
-    'MIDDLE':   (0.50, 0.02, 0.40, 0.90),
+    'DEEP':      (0.25, 0.00, 0.05, 1.00),
+    'MIDDLE':    (0.50, 0.02, 0.40, 0.90),
     'ATTACKING': (0.17, 0.30, 0.70, 0.75),
     'DANGEROUS': (0.08, 0.85, 0.15, 0.60),
 }
 FK_SHOT_SCALING = 24
 FK_GOAL_CONVERSION_FACTOR_BASE = 0.60
 
-# Penalty Kick Tuning Knobs (remains the same)
+# Penalty Kick Tuning Knobs
 PENALTY_AWARD_PROBABILITY = 0.03
 PENALTY_SCALING = 20
 PENALTY_CONVERSION_FACTOR = 1.15
 
 # ---------------------------------------
-# Morale System Tuning Knobs (NEW)
+# Morale System Tuning Knobs
 # ---------------------------------------
-# The 'why': These parameters allow game designers to balance the psychological aspect of the game.
-
-# Base morale change for a win/loss/draw.
 MORALE_BASE_WIN = 8
 MORALE_BASE_LOSS = -10
 MORALE_BASE_DRAW = 1
-
-# Multiplier applied based on the margin of victory/defeat.
 MORALE_MARGIN_THRESHOLD = 3
 MORALE_MARGIN_MULTIPLIER = 1.5
-
-# Bonus morale for individual performance.
 MORALE_GOAL_BONUS = 3
 MORALE_HAT_TRICK_BONUS = 10
-
-# The baseline morale that non-participants drift towards and the rate.
 MORALE_DRIFT_TARGET = 75
 MORALE_DRIFT_RATE = 0.05
-
-# NEW: Temporary flag to disable morale adjustments for balancing purposes.
-# Set to 0 to skip post-match morale updates.
-# Change to 1 to enable morale updates.
-# Note: This is separate from MORALE_EFFECT_ACTIVE in player.py, which controls effect on skills.
 MORALE_EFFECT_ACTIVE = 0
 
-
-# ... (logistic_probability and goal_probability functions remain the same) ...
 def logistic_probability(strength_a, strength_b, scaling_factor):
     diff = strength_a - strength_b
     try:
@@ -92,7 +78,7 @@ def logistic_probability(strength_a, strength_b, scaling_factor):
     except OverflowError:
         return 1.0 if diff > 0 else 0.0
 
-def goal_probability(shooter_eff: float, keeper_eff: float, scaling=GK_SHOT_SCALING, conversion_factor=GOAL_CONVERSION_FACTOR) -> float:
+def goal_probability(shooter_eff: float, keeper_eff: float, scaling=GK_SHOT_SCALING, base_conversion_factor=GOAL_CONVERSION_FACTOR_BASE, distance=None) -> float:
     rand_shooter = shooter_eff * random.uniform(SHOOTER_NOISE_MIN, SHOOTER_NOISE_MAX)
     rand_keeper = keeper_eff * random.uniform(GK_NOISE_MIN, GK_NOISE_MAX)
     diff = rand_shooter - rand_keeper
@@ -103,11 +89,23 @@ def goal_probability(shooter_eff: float, keeper_eff: float, scaling=GK_SHOT_SCAL
         else: base = 1 / (1 + math.exp(exponent))
     except OverflowError:
         base = 1.0 if diff > 0 else 0.0
-    return min(1.0, base * conversion_factor)
+
+    if distance is not None:
+        if distance < OPTIMAL_SHOT_DISTANCE:
+            distance_modifier = min(1.1, 1.0 + (OPTIMAL_SHOT_DISTANCE - distance) * 0.01)
+        else:
+            penalty = (distance - OPTIMAL_SHOT_DISTANCE) * DISTANCE_PENALTY_FACTOR
+            distance_modifier = max(0.1, 1.0 - penalty)
+        final_conversion_factor = base_conversion_factor * distance_modifier
+    else:
+        final_conversion_factor = base_conversion_factor
+
+    return min(1.0, base * final_conversion_factor)
 
 class MatchTeam:
     def __init__(self, team_model, is_home=False, fixed_lineup_ids=None):
         self.team = team_model
+        self.color = team_model.color if team_model else '#cccccc'
         self.is_home = is_home
         self.fixed_lineup_ids = fixed_lineup_ids
         self.lineup = {}
@@ -116,11 +114,16 @@ class MatchTeam:
         self.avg_shape = 0
         self.avg_base_skill = 0
         self.avg_effective_skill = 0
-        # NEW: Track average morale of the starting 11.
         self.avg_morale = 0
         self.score = 0
-        # NEW: Track individual player stats (key: player ID, value: goals scored)
         self.player_stats = {}
+        self.match_stats = {
+            'possession_time': 0,
+            'shots': 0,
+            'passes_won': 0,
+            'tackles_won': 0,
+            'territorial_advantage_time': 0
+        }
 
         self.select_lineup()
         self.calculate_zonal_strength()
@@ -129,16 +132,17 @@ class MatchTeam:
         self._initialize_player_stats()
 
     def _initialize_player_stats(self):
-        """ Initialize tracking for all players in the squad. """
         for player in self.team.players:
             self.player_stats[player.id] = {'goals': 0}
 
     def record_goal(self, player):
-        """ Records a goal scored by a player. """
         if player and player.id in self.player_stats:
             self.player_stats[player.id]['goals'] += 1
 
-    # ... (get_starting_11, _find_best_fk_taker, _find_best_penalty_taker remain the same) ...
+    def record_stat(self, stat_name, amount=1):
+        if stat_name in self.match_stats:
+            self.match_stats[stat_name] += amount
+
     def get_starting_11(self):
         return [p for players in self.lineup.values() for p in players]
 
@@ -158,7 +162,6 @@ class MatchTeam:
             self.lineup = {pos: [] for pos in Position}
             for p in fixed_players: self.lineup[p.position].append(p)
         else:
-            # Lineup selection now considers the morale-influenced effective_skill.
             sorted_players = sorted(self.team.players, key=lambda p: p.effective_skill, reverse=True)
             self.lineup = {pos: [] for pos in Position}
             squad_count = 0
@@ -177,18 +180,15 @@ class MatchTeam:
             self.avg_base_skill = sum(p.skill for p in starting_11) / len(starting_11)
             self.avg_shape = sum(p.shape for p in starting_11) / len(starting_11)
             self.avg_effective_skill = sum(p.effective_skill for p in starting_11) / len(starting_11)
-            # NEW: Calculate average morale of the starting 11.
             self.avg_morale = sum(p.morale for p in starting_11) / len(starting_11)
 
     def calculate_zonal_strength(self):
         for pos in Position:
             players = self.lineup.get(pos, [])
-            # Zonal strength calculation uses the morale-influenced effective_skill.
             base_strength = sum(p.effective_skill for p in players) / len(players) if players else 20
             self.base_zonal_strength[pos] = base_strength
             self.zonal_strength[pos] = base_strength * HOME_ADVANTAGE_BOOST if self.is_home else base_strength
 
-    # ... (get_random_player, get_goalkeeper remain the same) ...
     def get_random_player(self, positions):
         candidates = [p for pos in positions for p in self.lineup.get(pos, [])]
         return random.choice(candidates) if candidates else None
@@ -200,22 +200,17 @@ class MatchTeam:
     def get_stats_dict(self):
         return {
             'name': self.team.name, 'is_home': self.is_home,
+            'color': self.color,
             'avg_base_skill': self.avg_base_skill, 'avg_shape': self.avg_shape, 'avg_effective_skill': self.avg_effective_skill,
-            # NEW: Include morale in the stats dictionary for analysis.
             'avg_morale': self.avg_morale,
             'base_zonal_strength': {pos.name: strength for pos, strength in self.base_zonal_strength.items()},
             'zonal_strength': {pos.name: strength for pos, strength in self.zonal_strength.items()},
-            # Updated to include morale and personality in lineup data
             'lineup': [{'name': p.name, 'position': p.position.value, 'skill': p.skill, 'shape': p.shape, 'morale': p.morale, 'personality': p.personality.value, 'fk_ability': getattr(p, 'free_kick_ability', 50), 'penalty_taking': getattr(p, 'penalty_taking', 50), 'id': p.id} for p in self.get_starting_11()]
         }
 
 class MatchSimulator:
-    # NEW: Added morale_params argument.
     def __init__(self, team_a_model, team_b_model, logging_enabled=True, fixed_a_ids=None, fixed_b_ids=None, is_knockout=False, morale_params=None):
-        # NEW: Allow overriding default morale parameters (for the workbench).
         self.morale_params = self._get_morale_params(morale_params)
-
-        # Modified initialization to handle None models (for workbench analysis)
         self.team_a = MatchTeam(team_a_model, is_home=True, fixed_lineup_ids=fixed_a_ids) if team_a_model else None
         self.team_b = MatchTeam(team_b_model, is_home=False, fixed_lineup_ids=fixed_b_ids) if team_b_model else None
         self.logging_enabled = logging_enabled
@@ -223,6 +218,7 @@ class MatchSimulator:
         self.log = []
         self.minute = 0
         self.zone = 'M'
+        self.dominance_score = 0.0
 
         if self.team_a and self.team_b:
             self.possession = random.choice([self.team_a, self.team_b])
@@ -234,11 +230,9 @@ class MatchSimulator:
         self.shootout_score_a = 0
         self.shootout_score_b = 0
         self.winner_on_penalties = None
-        # NEW: Flag to track if this simulation should update the database.
         self.commit_changes = False
 
     def _get_morale_params(self, overrides):
-        """ Helper to merge default morale parameters with any overrides. """
         params = {
             'MORALE_BASE_WIN': MORALE_BASE_WIN,
             'MORALE_BASE_LOSS': MORALE_BASE_LOSS,
@@ -254,7 +248,6 @@ class MatchSimulator:
             params.update(overrides)
         return params
 
-    # ... (_generate_free_kicks, log_event remain the same) ...
     def _generate_free_kicks(self):
         num_kicks = max(10, int(random.gauss(AVG_FREE_KICKS_PER_GAME, FREE_KICK_VARIANCE)))
         events = []
@@ -268,17 +261,26 @@ class MatchSimulator:
         events.sort(key=lambda e: e['minute'])
         return events
 
-    def log_event(self, message, importance='normal', event_type=None, details=None):
+    def log_event(self, message, importance='normal', event_type=None, details=None, metadata=None):
         if not self.logging_enabled: return
-        self.log.append({'minute': self.minute, 'message': message, 'importance': importance, 'event_type': event_type, 'details': details})
+        event_metadata = metadata if metadata is not None else {}
+        event_metadata['dominance'] = round(self.dominance_score, 3)
+
+        self.log.append({
+            'minute': self.minute,
+            'message': message,
+            'importance': importance,
+            'event_type': event_type,
+            'details': details,
+            'metadata': event_metadata
+        })
 
     def simulate(self, commit_changes=False):
-        # Set the flag based on the caller's intention.
         self.commit_changes = commit_changes
 
         if not self.team_a or not self.team_b:
-             self.log_event("Match abandoned due to missing team models.", importance='error')
-             return self.get_results()
+            self.log_event("Match abandoned due to missing team models.", importance='error')
+            return self.get_results()
 
         if len(self.team_a.get_starting_11()) < 11 or len(self.team_b.get_starting_11()) < 11:
             self.log_event("Match abandoned due to insufficient players.", importance='error')
@@ -291,9 +293,19 @@ class MatchSimulator:
             self._process_scheduled_free_kicks()
             if self.minute >= 90: break
             time_increment = random.randint(1, 6)
+
+            if self.possession:
+                self.possession.record_stat('possession_time', time_increment)
+                if (self.possession == self.team_a and self.zone == 'A') or \
+                   (self.possession == self.team_b and self.zone == 'B'):
+                    self.possession.record_stat('territorial_advantage_time', time_increment)
+
             last_minute = self.minute
             self.minute += time_increment
             if self.minute > 90: self.minute = 90
+
+            self.calculate_dominance()
+
             if self.logging_enabled and last_minute < 45 and self.minute >= 45: self.log_event("Halftime", importance='info')
             self.process_event()
 
@@ -303,13 +315,44 @@ class MatchSimulator:
         if self.is_knockout and self.team_a.score == self.team_b.score:
             self.resolve_shootout()
 
-        # NEW: Apply post-match updates (Morale).
         if MORALE_EFFECT_ACTIVE == 1:
             self.apply_post_match_morale_updates()
 
         return self.get_results()
 
-    # ... (Simulation methods: _process_scheduled_free_kicks, process_event, resolve_free_kick, resolve_midfield_battle, resolve_attack remain the same) ...
+    def calculate_dominance(self):
+        W_POSSESSION = 0.3
+        W_TERRITORY = 0.3
+        W_ACTIONS = 0.4
+
+        total_time = self.team_a.match_stats['possession_time'] + self.team_b.match_stats['possession_time']
+        if total_time == 0:
+            return
+
+        poss_a = self.team_a.match_stats['possession_time'] / total_time
+        poss_b = self.team_b.match_stats['possession_time'] / total_time
+        score_possession = poss_b - poss_a
+
+        terr_a = self.team_a.match_stats['territorial_advantage_time'] / total_time
+        terr_b = self.team_b.match_stats['territorial_advantage_time'] / total_time
+        score_territory = terr_b - terr_a
+
+        actions_a = self.team_a.match_stats['passes_won'] + self.team_a.match_stats['tackles_won'] + self.team_a.match_stats['shots'] * 3
+        actions_b = self.team_b.match_stats['passes_won'] + self.team_b.match_stats['tackles_won'] + self.team_b.match_stats['shots'] * 3
+        total_actions = actions_a + actions_b
+        if total_actions > 0:
+            score_actions = (actions_b - actions_a) / total_actions
+        else:
+            score_actions = 0
+
+        calculated_score = (score_possession * W_POSSESSION +
+                            score_territory * W_TERRITORY +
+                            score_actions * W_ACTIONS)
+
+        MOMENTUM_FACTOR = 0.1
+        self.dominance_score += (calculated_score - self.dominance_score) * MOMENTUM_FACTOR
+        self.dominance_score = max(-1.0, min(1.0, self.dominance_score))
+
     def _process_scheduled_free_kicks(self):
         while self.free_kick_events and self.free_kick_events[0]['minute'] <= self.minute:
             fk_event = self.free_kick_events.pop(0)
@@ -331,6 +374,7 @@ class MatchSimulator:
         if action_roll < p_direct:
             self.resolve_direct_free_kick(attacker, defender, zone)
         elif action_roll < (p_direct + p_indirect_attack):
+            attacker.record_stat('passes_won')
             self.log_event(f"{attacker.team.name} sends a cross or pass into the attacking zone.", event_type='INDIRECT_FK_ATTACK')
             self.possession = attacker
             self.zone = 'A' if attacker == self.team_a else 'B'
@@ -343,14 +387,16 @@ class MatchSimulator:
     def resolve_direct_free_kick(self, attacker, defender, zone):
         taker, goalkeeper = attacker.best_fk_taker, defender.get_goalkeeper()
         if not taker or not goalkeeper: return
+
+        attacker.record_stat('shots')
+
         self.log_event(f"{taker.name} steps up to take the direct free kick.", importance='high', event_type='DIRECT_FK')
         dist_factor = {'DANGEROUS': 1.3, 'ATTACKING': 0.8, 'MIDDLE': 0.3}.get(zone, 0.1)
         final_conv_factor = FK_GOAL_CONVERSION_FACTOR_BASE * dist_factor
-        prob = goal_probability(taker.effective_fk_ability, goalkeeper.effective_skill, scaling=FK_SHOT_SCALING, conversion_factor=final_conv_factor)
+        prob = goal_probability(taker.effective_fk_ability, goalkeeper.effective_skill, scaling=FK_SHOT_SCALING, base_conversion_factor=final_conv_factor)
         roll = random.random()
         if roll < prob:
             attacker.score += 1
-            # NEW: Record the goal for morale updates.
             attacker.record_goal(taker)
             if self.logging_enabled:
                 details = f"Direct FK ({zone}): {taker.name} (Eff FK: {taker.effective_fk_ability:.1f}) vs {goalkeeper.name} (Eff GK: {goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> GOAL"
@@ -369,9 +415,11 @@ class MatchSimulator:
         att_str, def_str = attacker.zonal_strength[Position.MIDFIELDER], defender.zonal_strength[Position.MIDFIELDER]
         prob, roll = logistic_probability(att_str, def_str, MIDFIELD_SCALING), random.random()
         if roll < prob:
+            attacker.record_stat('passes_won')
             self.zone = 'A' if attacker == self.team_a else 'B'
             if self.logging_enabled: self.log_event(f"{attacker.team.name} advances.")
         else:
+            defender.record_stat('tackles_won')
             self.possession = defender
             if self.logging_enabled: self.log_event(f"{defender.team.name} wins the ball.")
 
@@ -381,13 +429,13 @@ class MatchSimulator:
         def_gate = ((1.0 - DEF_GK_BLEND) * pure_def + DEF_GK_BLEND * gk_str) * defense_modifier
         prob, roll = logistic_probability(att_str, def_gate, ATTACK_SCALING), random.random()
         if roll < prob:
-            if self.logging_enabled: self.log_event(f"{attacker.team.name} creates a chance!", event_type='SHOT_OPPORTUNITY')
             self.resolve_shot(attacker, defender)
         else:
             if random.random() < PENALTY_AWARD_PROBABILITY:
                 self.log_event(f"PENALTY to {attacker.team.name}!", event_type='PENALTY_AWARDED', importance='high')
                 self.resolve_penalty_kick(attacker, defender)
             else:
+                defender.record_stat('tackles_won')
                 self.possession = defender
                 self.zone = 'M'
                 if self.logging_enabled: self.log_event(f"{defender.team.name}'s defense holds firm.", event_type='DEFENSIVE_STOP')
@@ -397,31 +445,56 @@ class MatchSimulator:
         if not shooter or not goalkeeper:
             self.possession, self.zone = defender, 'M'
             return
-        prob, roll = goal_probability(shooter.effective_skill, goalkeeper.effective_skill), random.random()
+
+        attacker.record_stat('shots')
+
+        distance = random.uniform(SHOT_DISTANCE_MIN, SHOT_DISTANCE_MAX)
+        prob, roll = goal_probability(shooter.effective_skill, goalkeeper.effective_skill, distance=distance), random.random()
+
+        if prob > 0.65: danger_level = "Critical"
+        elif prob > 0.45: danger_level = "High"
+        elif prob > 0.25: danger_level = "Medium"
+        else: danger_level = "Low"
+
+        if self.logging_enabled:
+            pre_shot_msg = f"{shooter.name} is taking a shot!"
+            metadata = {
+                'distance': f"{distance:.1f}m",
+                'danger_level': danger_level
+            }
+            self.log_event(pre_shot_msg, importance='pre_shot', event_type='SHOT_INITIATED', metadata=metadata)
+
         if roll < prob:
             attacker.score += 1
-            # NEW: Record the goal for morale updates.
             attacker.record_goal(shooter)
             if self.logging_enabled:
-                details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> GOAL"
+                details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Dist: {distance:.1f}m, Prob: {prob:.1%}, Roll: {roll:.3f} -> GOAL"
                 self.log_event(f"GOAL! {shooter.name}! ({self.team_a.score}-{self.team_b.score})", importance='goal', event_type='GOAL', details=details)
         else:
             if self.logging_enabled:
-                details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> NO GOAL"
-                self.log_event(f"NO GOAL! Shot by {shooter.name}.", importance='miss', event_type='MISS', details=details)
+                details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Dist: {distance:.1f}m, Prob: {prob:.1%}, Roll: {roll:.3f} -> NO GOAL"
+                if prob - roll < 0.1:
+                    outcome_msg = f"WHAT A SAVE by {goalkeeper.name}!"
+                    importance = 'save'
+                else:
+                    outcome_msg = f"JUST WIDE! Shot by {shooter.name}."
+                    importance = 'miss'
+                self.log_event(outcome_msg, importance=importance, event_type='MISS', details=details)
+
         self.possession, self.zone = defender, 'M'
 
     def resolve_penalty_kick(self, attacker, defender, taker=None, is_shootout_kick=False):
-        # ... (initialization and probability calculation remains the same)
         if taker is None: taker = attacker.best_penalty_taker
         goalkeeper = defender.get_goalkeeper()
         if not taker or not goalkeeper: return False
 
-        prob, roll = goal_probability(taker.effective_penalty_taking, goalkeeper.effective_penalty_saving, scaling=PENALTY_SCALING, conversion_factor=PENALTY_CONVERSION_FACTOR), random.random()
+        if not is_shootout_kick:
+            attacker.record_stat('shots')
+
+        prob, roll = goal_probability(taker.effective_penalty_taking, goalkeeper.effective_penalty_saving, scaling=PENALTY_SCALING, base_conversion_factor=PENALTY_CONVERSION_FACTOR), random.random()
         is_goal = roll < prob
 
         if self.logging_enabled:
-             # ... (logging details remain the same)
             details = (f"Penalty: {taker.name} (Eff Pen: {taker.effective_penalty_taking:.1f}) vs {goalkeeper.name} (Eff Save: {goalkeeper.effective_penalty_saving:.1f})\n"
                        f"- Pen Scaling: {PENALTY_SCALING}, Conv Factor: {PENALTY_CONVERSION_FACTOR:.2f}\n"
                        f"- Prob: {prob:.1%}, Roll: {roll:.3f} -> {'GOAL' if is_goal else 'NO GOAL'}")
@@ -433,15 +506,13 @@ class MatchSimulator:
                 else: self.log_event(f"MISSED! {taker.name}'s penalty is saved or wide!", importance='miss', event_type='MISS_PENALTY', details=details)
 
         if not is_shootout_kick:
-            if is_goal: 
+            if is_goal:
                 attacker.score += 1
-                # NEW: Record the goal for morale updates.
                 attacker.record_goal(taker)
             self.possession, self.zone = defender, 'M'
 
         return is_goal
 
-    # ... (resolve_shootout remains the same) ...
     def resolve_shootout(self):
         self.log_event("The match is drawn. A penalty shootout will decide the winner!", importance='final', event_type='SHOOTOUT_START')
         team_a_players = [p for p in self.team_a.get_starting_11() if p.position != Position.GOALKEEPER]
@@ -474,20 +545,9 @@ class MatchSimulator:
         self.winner_on_penalties = self.team_a.team.name if self.shootout_score_a > self.shootout_score_b else self.team_b.team.name
         self.log_event(f"{self.winner_on_penalties} wins the shootout {self.shootout_score_a}-{self.shootout_score_b}!", importance='final', event_type='SHOOTOUT_END')
 
-
-    # =====================================
-    # Post-Match Morale Updates (NEW)
-    # =====================================
-
     def apply_post_match_morale_updates(self):
-        """
-        NEW: Calculates and applies morale changes to both teams after the match.
-        This function implements the core dynamic feedback loop of the morale system.
-        """
-        # Determine the result and margin for both teams.
         score_a, score_b = self.team_a.score, self.team_b.score
 
-        # Handle penalty shootout winners (they count as a win, but margin is ignored).
         if self.winner_on_penalties:
             result_a = 'WIN' if self.winner_on_penalties == self.team_a.team.name else 'LOSS'
             result_b = 'LOSS' if result_a == 'WIN' else 'WIN'
@@ -505,7 +565,6 @@ class MatchSimulator:
         self._process_team_morale(self.team_a, result_a, margin_a)
         self._process_team_morale(self.team_b, result_b, margin_b)
 
-        # Commit changes to the database if this was a real match (not analysis).
         if self.commit_changes:
             try:
                 db.session.commit()
@@ -515,10 +574,8 @@ class MatchSimulator:
                 self.log_event(f"Error committing morale updates: {e}", importance='error', event_type='DB_ERROR')
 
     def _process_team_morale(self, match_team, result, margin):
-        """ Processes morale updates for a single team based on results, performance, and personality. """
         params = self.morale_params
 
-        # Determine base morale change and margin multiplier.
         if result == 'WIN':
             base_change = params['MORALE_BASE_WIN']
             is_positive = True
@@ -529,23 +586,18 @@ class MatchSimulator:
             is_significant = abs(margin) >= params['MORALE_MARGIN_THRESHOLD']
         else: # DRAW
             base_change = params['MORALE_BASE_DRAW']
-            # Draw is positive if morale is currently low, negative if morale is high.
             is_positive = match_team.avg_morale < params['MORALE_DRIFT_TARGET']
             is_significant = False
 
         margin_multiplier = params['MORALE_MARGIN_MULTIPLIER'] if is_significant else 1.0
-
         starting_11_ids = {p.id for p in match_team.get_starting_11()}
 
         for player in match_team.team.players:
-            # 1. Calculate the outcome-based change (for participants only).
             outcome_change = 0
             if player.id in starting_11_ids:
                 personality_multiplier = player.get_personality_multiplier(is_positive)
-                # Apply the full calculation: Base * Margin * Personality
                 outcome_change = base_change * margin_multiplier * personality_multiplier
 
-            # 2. Calculate performance-based change (goals).
             performance_change = 0
             goals_scored = match_team.player_stats[player.id]['goals']
             if goals_scored >= 3:
@@ -553,24 +605,16 @@ class MatchSimulator:
             elif goals_scored > 0:
                 performance_change = goals_scored * params['MORALE_GOAL_BONUS']
 
-            # 3. Calculate drift (for non-participants only).
             drift_change = 0
             if player.id not in starting_11_ids:
                 distance_to_target = params['MORALE_DRIFT_TARGET'] - player.morale
                 drift_change = distance_to_target * params['MORALE_DRIFT_RATE']
 
-            # 4. Combine and apply the changes.
             total_change = int(round(outcome_change + performance_change + drift_change))
-
-            # Apply the change, clamping between 0 and 100.
             new_morale = max(0, min(100, player.morale + total_change))
-
-            # Update the player object (this is tracked by SQLAlchemy session).
-            # We capture the old morale for logging before updating.
             old_morale = player.morale
             player.morale = new_morale
 
-            # Optional: Detailed logging for debugging/transparency.
             if self.logging_enabled and abs(total_change) > 0:
                 log_details = (f"Player: {player.name} ({player.personality.value}), Result: {result} (Margin {margin}), "
                                f"Goals: {goals_scored}.\n"
@@ -578,39 +622,29 @@ class MatchSimulator:
                                f"Total: {total_change}. Morale: {old_morale} -> {player.morale}")
                 self.log_event(f"{player.name} morale change: {total_change:+d}", importance='minor', event_type='MORALE_UPDATE', details=log_details)
 
-
     def get_results(self):
-        # Updated to handle cases where teams might be None
         return {
             'log': self.log,
             'score_a': self.team_a.score if self.team_a else 0,
             'score_b': self.team_b.score if self.team_b else 0,
             'team_a_name': self.team_a.team.name if self.team_a else 'N/A',
             'team_b_name': self.team_b.team.name if self.team_b else 'N/A',
+            'team_a_color': self.team_a.color if self.team_a else '#cccccc',
+            'team_b_color': self.team_b.color if self.team_b else '#cccccc',
             'shootout_score_a': self.shootout_score_a,
             'shootout_score_b': self.shootout_score_b,
             'winner_on_penalties': self.winner_on_penalties,
         }
 
-# =====================================
-# Helper Functions
-# =====================================
-
 def simulate_match(team_a_id, team_b_id, is_knockout=False):
-    """ Helper to run a single, fully-logged match. Now updates the database. """
     team_a, team_b = Team.query.get(team_a_id), Team.query.get(team_b_id)
     if not team_a or not team_b:
         return {'log': [{'message': 'Invalid Teams'}], 'score_a': 0, 'score_b': 0, 'team_a_name': '?', 'team_b_name': '?'}
 
-    # NEW: commit_changes=True ensures that morale updates are saved.
     simulator = MatchSimulator(team_a, team_b, logging_enabled=True, is_knockout=is_knockout)
     return simulator.simulate(commit_changes=True)
 
-# textfootball/core/match_simulator.py
-
-# MODIFIED: This is the function you need to replace.
 def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, user_team_model=None, enemy_team_model=None, fixed_user_lineup_ids=None, morale_params=None):
-    """ Helper to run many non-logged simulations for statistical analysis. """
     if not user_team_model and user_team_id: user_team_model = Team.query.get(user_team_id)
     if not enemy_team_model and enemy_team_id: enemy_team_model = Team.query.get(enemy_team_id)
     if not user_team_model or not enemy_team_model: return {'error': 'Invalid teams'}
@@ -623,7 +657,6 @@ def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, us
     def _run_fixture_sims(home_team_model, away_team_model, fixed_home_ids=None, fixed_away_ids=None):
         wins, draws, losses, goals_for, goals_against = 0, 0, 0, 0, 0
         for _ in range(simulations):
-            # MODIFIED: Pass the morale_params to the simulator.
             simulator = MatchSimulator(
                 home_team_model,
                 away_team_model,
@@ -631,7 +664,7 @@ def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, us
                 fixed_a_ids=fixed_home_ids,
                 fixed_b_ids=fixed_away_ids,
                 is_knockout=False,
-                morale_params=morale_params # This is the crucial addition
+                morale_params=morale_params
             )
             result = simulator.simulate(commit_changes=False)
 

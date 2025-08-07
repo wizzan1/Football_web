@@ -1,0 +1,1748 @@
+--- AI-Refined Task ---
+**Feature: Enhanced Match Visualization and Event Narration**
+
+This feature aims to increase viewer engagement during match simulations by introducing dynamic visual indicators and a more dramatic event timeline.
+
+**1. Team Color Integration**
+   - **1.1. Data Model:** Modify the `Team` entity to include a `color` attribute, storing a hex color code (e.g., `#FF5733`).
+   - **1.2. UI Implementation:** Systematically apply the team's assigned `color` to all relevant UI elements within the match view, including team names, score displays, and player markers on a minimap if applicable.
+
+**2. Dominance Bar UI**
+   - **2.1. Component Creation:** Implement a new UI component, the "Dominance Bar," displayed prominently during the match. This will be a horizontal bar with two opposing colors corresponding to the competing teams.
+   - **2.2. Dominance Logic:** Develop a backend algorithm to calculate a "dominance score" in real-time. The score should be a float value between -1.0 (Team A full dominance) and +1.0 (Team B full dominance), with 0.0 being neutral.
+      - **Inputs for calculation:** Consider factors such as ball possession percentage, successful passes, shots on goal, tackles won, and territorial advantage over the last 1-2 minutes of game time.
+   - **2.3. Real-time Updates:** The Dominance Bar's visual state must update smoothly based on the calculated score. The fill/indicator should move towards the color of the currently dominating team.
+
+**3. Shot Buildup Sequence**
+   - **3.1. Event Timeline Refactor:** Modify the match event log to handle multi-stage events instead of instantaneous outcomes.
+   - **3.2. Pre-Shot Event:** When a shot is initiated, trigger a "pre-shot" event in the timeline.
+      - **Display:** "[Player Name] is taking a shot!"
+      - **Metadata:** Display the shot distance (e.g., "From 18 meters") and a calculated "Danger Level" (e.g., "Low," "Medium," "High," "Critical") based on the distance and player stats.
+   - **3.3. Suspense Delay:** Implement a mandatory 2-3 second delay on the front end after the pre-shot event is displayed before revealing the outcome. This can be accompanied by a subtle loading or pulsing animation on the event log entry.
+   - **3.4. Outcome Event:** After the delay, display the final result with more impactful text (e.g., "GOAL!", "WHAT A SAVE!", "JUST WIDE!", "BLOCKED!").
+
+**4. Shot Outcome Logic Refinement**
+   - **4.1. Backend Calculation:** Update the shot resolution algorithm in the match engine. The probability of a shot resulting in a goal must be inversely correlated with the shot distance. Shots from closer ranges should have a significantly higher base chance of success.
+
+--- Files to Modify ---
+Here comes all the the code that is needed to implement this.. analyze them and give me the Complete modified codes back to implement this:
+
+textfootball\blueprints\game\routes.py
+textfootball\core\match_simulator.py
+textfootball\models\team.py
+textfootball\templates\create_team.html
+textfootball\templates\match_result.html
+textfootball\templates\simulate.html
+
+====================
+File: textfootball\blueprints\game\routes.py
+====================
+# textfootball/blueprints/game/routes.py
+
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
+from textfootball import db
+# MODIFIED: Add Personality to the model imports
+from textfootball.models import User, Team, Player, Position, Message, Personality
+import random
+import statistics
+from datetime import datetime
+# MODIFIED: Add the new morale constants to the simulator import
+from textfootball.core.match_simulator import (
+    simulate_match, get_prematch_odds, MatchTeam,
+    MORALE_BASE_WIN, MORALE_BASE_DRAW, MORALE_BASE_LOSS,
+    MORALE_MARGIN_THRESHOLD, MORALE_MARGIN_MULTIPLIER,
+    MORALE_GOAL_BONUS, MORALE_HAT_TRICK_BONUS,
+    MORALE_DRIFT_TARGET, MORALE_DRIFT_RATE
+)
+
+game_bp = Blueprint('game', __name__)
+
+MAX_TEAMS = 3
+
+FIRST_NAMES = ["Erik", "Lars", "Mikael", "Anders", "Johan", "Karl", "Fredrik"]
+LAST_NAMES = ["Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson"]
+
+def _generate_starter_squad(team):
+    """
+    Generates a starter squad for a new team, now including penalty-related skills.
+    """
+    positions = [Position.GOALKEEPER]*2 + [Position.DEFENDER]*6 + [Position.MIDFIELDER]*7 + [Position.FORWARD]*5
+    random.shuffle(positions)
+    available_numbers = list(range(1, 21))
+    random.shuffle(available_numbers)
+    for i in range(20):
+        skill = random.randint(30, 70)
+        current_pos = positions[i]
+
+        # Free Kick ability: Correlated with skill but with high variance
+        fk_ability = 50  # Fixed to 50 (default) for balancing, as per request; keep even to manually adjust parameters
+
+        # NEW: Penalty Taking: Similar correlation to FK ability, representing composure.
+        pen_taking = max(10, min(99, skill + random.randint(-20, 20)))
+
+        # NEW: Penalty Saving: Highly dependent on position. Goalkeepers are specialized.
+        if current_pos == Position.GOALKEEPER:
+            # Goalkeepers are naturally good at this
+            pen_saving = max(40, min(90, skill + random.randint(5, 30)))
+        else:
+            # Outfield players are generally poor at saving penalties
+            pen_saving = random.randint(5, 25)
+
+        player = Player(
+            name=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
+            age=random.randint(18, 32),
+            position=current_pos,
+            skill=skill,
+            free_kick_ability=fk_ability,
+            penalty_taking=pen_taking,
+            penalty_saving=pen_saving,
+            potential=random.randint(60, 95),
+            shape=100,
+            morale=100,
+            shirt_number=available_numbers.pop(),
+            team_id=team.id
+        )
+        db.session.add(player)
+
+@game_bp.route('/')
+def index():
+    if 'username' in session:
+        return redirect(url_for('game.dashboard'))
+    return render_template('index.html')
+
+@game_bp.route('/dashboard')
+def dashboard():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    user = User.query.filter_by(username=session['username']).first()
+    return render_template('dashboard.html', user=user, max_teams=MAX_TEAMS)
+
+@game_bp.route('/team/<int:team_id>')
+def team_page(team_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    team = Team.query.get_or_404(team_id)
+    user = User.query.filter_by(username=session['username']).first()
+    is_owner = (team.user_id == user.id)
+    if is_owner:
+        session['selected_team_id'] = team.id
+    position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
+    sorted_players = sorted(team.players, key=lambda p: (position_order[p.position], p.shirt_number))
+    # Note: The user must update team_page.html to display the new penalty attributes.
+    return render_template('team_page.html', team=team, players=sorted_players, is_owner=is_owner)
+
+@game_bp.route('/delete-team/<int:team_id>', methods=['POST'])
+def delete_team(team_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    team = Team.query.get_or_404(team_id)
+    user = User.query.filter_by(username=session['username']).first()
+    if team.user_id != user.id:
+        flash("You do not have permission to do that.", "danger")
+        return redirect(url_for('game.dashboard'))
+    db.session.delete(team)
+    db.session.commit()
+    flash(f"Team '{team.name}' has been deleted.", "success")
+    if 'selected_team_id' in session and session['selected_team_id'] == team_id:
+        session.pop('selected_team_id')
+    return redirect(url_for('game.dashboard'))
+
+@game_bp.route('/create-team', methods=['GET', 'POST'])
+def create_team():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    user = User.query.filter_by(username=session['username']).first()
+    if len(user.teams) >= MAX_TEAMS:
+        flash(f"You have reached the maximum of {MAX_TEAMS} teams.", "warning")
+        return redirect(url_for('game.dashboard'))
+    if request.method == 'POST':
+        team_name = request.form.get('name')
+        country = request.form.get('country')
+        existing_team = Team.query.filter_by(name=team_name).first()
+        if existing_team:
+            flash('That team name is already taken.', "danger")
+            return redirect(url_for('game.create_team'))
+        new_team = Team(name=team_name, country=country, user_id=user.id)
+        db.session.add(new_team)
+        db.session.commit()
+        # This function now generates penalty skills
+        _generate_starter_squad(new_team)
+        db.session.commit()
+        return redirect(url_for('game.dashboard'))
+    return render_template('create_team.html')
+
+@game_bp.route('/player/<int:player_id>')
+def player_page(player_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    player = Player.query.get_or_404(player_id)
+    user = User.query.filter_by(username=session['username']).first()
+    is_owner = (player.team.user_id == user.id)
+    # Note: The user must update player_page.html to display the new penalty attributes.
+    return render_template('player_page.html', player=player, is_owner=is_owner)
+
+@game_bp.route('/coming-soon')
+def coming_soon():
+    return render_template('coming_soon.html')
+
+@game_bp.route('/search', methods=['GET', 'POST'])
+def search():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    query = ''
+    users = []
+    teams = []
+    if request.method == 'POST':
+        query = request.form.get('query', '')
+        if query:
+            users = User.query.filter(User.username.ilike(f'%{query}%')).all()
+            teams = Team.query.filter(Team.name.ilike(f'%{query}%')).all()
+    return render_template('search.html', query=query, users=users, teams=teams)
+
+@game_bp.route('/user/<username>')
+def user_profile(username):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    profile_user = User.query.filter_by(username=username).first_or_404()
+    return render_template('user_profile.html', profile_user=profile_user)
+
+@game_bp.route('/challenge/<int:team_id>', methods=['POST'])
+def challenge_team(team_id):
+    """
+    Handles challenges between teams. Now accepts a 'match_type' form parameter
+    to determine if the match is a knockout game requiring a shootout on a draw.
+    """
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+
+    challenged_team = Team.query.get_or_404(team_id)
+    user = User.query.filter_by(username=session['username']).first()
+
+    if challenged_team.user_id == user.id:
+        flash("You cannot challenge your own team.", "danger")
+        return redirect(url_for('game.team_page', team_id=team_id))
+
+    if 'selected_team_id' not in session:
+        flash("Select one of your teams first to challenge with.", "warning")
+        return redirect(url_for('game.dashboard'))
+
+    challenger_team = Team.query.get(session['selected_team_id'])
+
+    if challenger_team is None or challenger_team.user_id != user.id:
+        flash("Invalid selected team.", "danger")
+        return redirect(url_for('game.team_page', team_id=team_id))
+
+    num_sims = int(request.form.get('num_sims', 1))
+    num_sims = max(1, min(num_sims, 10))
+
+    # NEW: Check if the match is a 'knockout' type from the form.
+    # The 'why': This allows the user to trigger matches that require a winner,
+    # enabling cup competitions or high-stakes single matches.
+    is_knockout = request.form.get('match_type') == 'knockout'
+
+    results = []
+    for _ in range(num_sims):
+        # NEW: The is_knockout flag is passed to the simulation engine.
+        sim_result = simulate_match(challenger_team.id, challenged_team.id, is_knockout=is_knockout)
+        results.append(sim_result)
+
+    # The user must update match_result.html to display shootout scores if they exist.
+    # Passing is_knockout to the template can help with conditional rendering.
+    return render_template('match_result.html', results=results, is_knockout=is_knockout)
+
+@game_bp.route('/mailbox')
+def mailbox():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    user = User.query.filter_by(username=session['username']).first()
+    received = Message.query.filter_by(recipient_id=user.id).order_by(Message.timestamp.desc()).all()
+    sent = Message.query.filter_by(sender_id=user.id).order_by(Message.timestamp.desc()).all()
+    return render_template('mailbox.html', received=received, sent=sent)
+
+@game_bp.route('/compose', methods=['GET', 'POST'])
+def compose():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    if request.method == 'POST':
+        recipient_username = request.form.get('recipient')
+        subject = request.form.get('subject')
+        body = request.form.get('body')
+        sender = User.query.filter_by(username=session['username']).first()
+        recipient = User.query.filter_by(username=recipient_username).first()
+        if not recipient:
+            flash(f"User '{recipient_username}' not found.", 'danger')
+            return render_template('compose.html', subject=subject, body=body, recipient=recipient_username)
+        if recipient.id == sender.id:
+            flash("You cannot send a message to yourself.", 'warning')
+            return render_template('compose.html', subject=subject, body=body, recipient=recipient_username)
+        message = Message(sender_id=sender.id, recipient_id=recipient.id, subject=subject, body=body)
+        db.session.add(message)
+        db.session.commit()
+        flash('Your message has been sent.', 'success')
+        return redirect(url_for('game.mailbox'))
+    recipient = request.args.get('recipient', '')
+    return render_template('compose.html', recipient=recipient)
+
+@game_bp.route('/mail/<int:message_id>')
+def view_mail(message_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    message = Message.query.get_or_404(message_id)
+    user = User.query.filter_by(username=session['username']).first()
+    if message.recipient_id != user.id and message.sender_id != user.id:
+        flash("You do not have permission to view this message.", "danger")
+        return redirect(url_for('game.mailbox'))
+    if message.recipient_id == user.id and not message.is_read:
+        message.is_read = True
+        db.session.commit()
+    return render_template('view_mail.html', message=message)
+
+@game_bp.route('/delete_mail/<int:message_id>', methods=['POST'])
+def delete_mail(message_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    user = User.query.filter_by(username=session['username']).first()
+    message = Message.query.get_or_404(message_id)
+    if message.sender_id != user.id and message.recipient_id != user.id:
+        flash("You do not have permission to delete this message.", "danger")
+        return redirect(url_for('game.mailbox'))
+    db.session.delete(message)
+    db.session.commit()
+    flash("Message deleted successfully.", "success")
+    return redirect(url_for('game.mailbox'))
+
+@game_bp.route('/accept_challenge/<int:message_id>', methods=['POST'])
+def accept_challenge(message_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    message = Message.query.get_or_404(message_id)
+    user = User.query.filter_by(username=session['username']).first()
+    if message.recipient_id != user.id or not message.is_challenge:
+        flash("Invalid challenge.", "danger")
+        return redirect(url_for('game.mailbox'))
+    if message.is_accepted:
+        flash("Challenge already accepted.", "info")
+        return redirect(url_for('game.view_mail', message_id=message_id))
+    message.is_accepted = True
+    response = Message(sender_id=user.id, recipient_id=message.sender_id, subject=f"Re: {message.subject}", body=f"{user.username} has accepted your challenge.")
+    db.session.add(response)
+    db.session.commit()
+    # Assuming challenges are friendly (not knockout) unless specified otherwise.
+    # For a more advanced system, the match type could be stored in the message.
+    results = [simulate_match(message.challenger_team_id, message.challenged_team_id, is_knockout=False)]
+    return render_template('match_result.html', results=results, is_knockout=False)
+
+@game_bp.route('/simulate')
+def simulate():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    user = User.query.filter_by(username=session['username']).first()
+    all_teams = Team.query.filter(Team.user_id != user.id).all()
+    user_team_id = session.get('selected_team_id')
+    enemies = []
+    for team in all_teams:
+        odds = None
+        if user_team_id:
+            odds = get_prematch_odds(user_team_id=user_team_id, enemy_team_id=team.id)
+        enemies.append({'team': team, 'odds': odds})
+    return render_template('simulate.html', enemies=enemies, has_selected_team=(user_team_id is not None))
+
+# textfootball/blueprints/game/routes.py
+
+@game_bp.route('/workbench')
+def workbench():
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+
+    user_team_id = session.get('selected_team_id')
+    if not user_team_id:
+        flash("Please select a team from the dashboard to use the Balancing Workbench.", "warning")
+        return redirect(url_for('game.dashboard'))
+
+    user = User.query.filter_by(username=session['username']).first()
+    user_team = Team.query.get(user_team_id)
+
+    if not user_team:
+        flash("The selected team could not be found. It may have been deleted. Please select another team.", "warning")
+        session.pop('selected_team_id', None)
+        return redirect(url_for('game.dashboard'))
+
+    if user_team.user_id != user.id:
+        flash("You do not own this team. Please select one of your teams.", "danger")
+        session.pop('selected_team_id', None)
+        return redirect(url_for('game.dashboard'))
+
+    match_team_instance = MatchTeam(user_team)
+    starting_11 = match_team_instance.get_starting_11()
+    session['workbench_fixed_lineup_ids'] = [p.id for p in starting_11]
+
+    position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
+    # MODIFIED: Sort by the new morale-influenced effective_skill
+    all_players = sorted(user_team.players, key=lambda p: (position_order[p.position], -p.effective_skill))
+
+    starting_11_ids = set(session['workbench_fixed_lineup_ids'])
+    all_other_teams = Team.query.filter(Team.id != user_team_id).order_by(Team.name).all()
+
+    # NEW: Create a dictionary of the default morale parameters
+    default_morale_params = {
+        'MORALE_BASE_WIN': MORALE_BASE_WIN,
+        'MORALE_BASE_LOSS': MORALE_BASE_LOSS,
+        'MORALE_BASE_DRAW': MORALE_BASE_DRAW,
+        'MORALE_MARGIN_THRESHOLD': MORALE_MARGIN_THRESHOLD,
+        'MORALE_MARGIN_MULTIPLIER': MORALE_MARGIN_MULTIPLIER,
+        'MORALE_GOAL_BONUS': MORALE_GOAL_BONUS,
+        'MORALE_HAT_TRICK_BONUS': MORALE_HAT_TRICK_BONUS,
+        'MORALE_DRIFT_TARGET': MORALE_DRIFT_TARGET,
+        'MORALE_DRIFT_RATE': MORALE_DRIFT_RATE
+    }
+
+    return render_template('balancing_workbench.html',
+                           user_team=user_team,
+                           all_players=all_players,
+                           starting_11_ids=starting_11_ids,
+                           all_other_teams=all_other_teams,
+                           # NEW: Pass the dictionary to the template
+                           default_morale_params=default_morale_params)
+
+# textfootball/blueprints/game/routes.py
+
+@game_bp.route('/recalculate_odds', methods=['POST'])
+def recalculate_odds():
+    if 'username' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json()
+    # MODIFIED: Check for the new morale_params in the request
+    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data or 'morale_params' not in data:
+        return jsonify({'error': 'Invalid request data'}), 400
+
+    user_team_id = session.get('selected_team_id')
+    if not user_team_id:
+        return jsonify({'error': 'No team selected'}), 400
+
+    user_team_model = Team.query.get(user_team_id)
+    enemy_team_model = Team.query.get(data.get('enemy_team_id'))
+    if not user_team_model or not enemy_team_model:
+        return jsonify({'error': 'Invalid team ID provided'}), 404
+
+    # NEW: Get the workbench's morale parameters from the request
+    morale_params_from_request = data.get('morale_params', {})
+
+    # MODIFIED: Update player stats to include all new editable attributes
+    modified_stats = {
+        int(p['id']): {
+            'skill': int(p['skill']),
+            'shape': int(p['shape']),
+            'morale': int(p['morale']), # NEW
+            'personality': p.get('personality'), # NEW
+            'free_kick_ability': int(p.get('free_kick_ability', 50)),
+            'penalty_taking': int(p.get('penalty_taking', 50))
+        } for p in data['user_team_players']
+    }
+
+    # MODIFIED: Apply all temporary changes from the workbench to the in-memory player objects
+    for player in user_team_model.players:
+        if player.id in modified_stats:
+            stats = modified_stats[player.id]
+            player.skill = stats['skill']
+            player.shape = stats['shape']
+            player.morale = stats['morale'] # NEW
+            player.free_kick_ability = stats['free_kick_ability']
+            player.penalty_taking = stats['penalty_taking']
+            # NEW: Safely update personality if it exists
+            if stats.get('personality'):
+                try:
+                    player.personality = Personality[stats['personality'].upper()]
+                except KeyError:
+                    pass # Ignore if personality is invalid
+
+    fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
+
+    # MODIFIED: Pass the morale parameters from the request into the odds calculation
+    odds = get_prematch_odds(
+        user_team_model=user_team_model,
+        enemy_team_model=enemy_team_model,
+        fixed_user_lineup_ids=fixed_lineup_ids,
+        morale_params=morale_params_from_request
+    )
+
+    db.session.expunge_all()
+    return jsonify(odds)
+
+# textfootball/blueprints/game/routes.py
+
+# textfootball/blueprints/game/routes.py
+
+# Add this new function anywhere in the file after the other routes.
+
+@game_bp.route('/analyze_morale_settings', methods=['POST'])
+def analyze_morale_settings():
+    """
+    Runs a sensitivity analysis on morale by simulating matches
+    across a range of morale values for the user's team.
+    """
+    if 'username' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json()
+    # Validate the data needed for this specific analysis
+    if not all(k in data for k in ['enemy_team_id', 'user_team_players', 'morale_params', 'analysis_params']):
+        return jsonify({'error': 'Invalid request data for morale analysis'}), 400
+
+    user_team_id = session.get('selected_team_id')
+    if not user_team_id:
+        return jsonify({'error': 'No team selected'}), 400
+
+    # Get the team models from the database
+    user_team_model = Team.query.get(user_team_id)
+    enemy_team_model = Team.query.get(data.get('enemy_team_id'))
+    if not user_team_model or not enemy_team_model:
+        return jsonify({'error': 'Invalid team ID provided'}), 404
+
+    # Get the parameters for the analysis loop
+    analysis_params = data.get('analysis_params', {})
+    morale_start = int(analysis_params.get('start', 10))
+    morale_end = int(analysis_params.get('end', 100))
+    morale_step = int(analysis_params.get('step', 10))
+
+    # Get other necessary data from the request
+    morale_params_from_request = data.get('morale_params', {})
+    fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
+
+    results_over_morale = []
+
+    # Loop through the specified morale range
+    for current_morale in range(morale_start, morale_end + 1, morale_step):
+        # On each iteration, temporarily set every player's morale to the current value
+        # This isolates morale as the single changing variable.
+        for player in user_team_model.players:
+            player.morale = current_morale
+
+        # Run the standard odds calculation with this temporary morale value
+        odds = get_prematch_odds(
+            user_team_model=user_team_model,
+            enemy_team_model=enemy_team_model,
+            fixed_user_lineup_ids=fixed_lineup_ids,
+            morale_params=morale_params_from_request
+        )
+
+        # Store the results for this morale level
+        if 'error' not in odds:
+            results_over_morale.append({
+                'morale': current_morale,
+                'home_probs': odds['home_fixture']['probs'],
+                'away_probs': odds['away_fixture']['probs']
+            })
+
+    # Clear any temporary changes from the database session
+    db.session.expunge_all()
+
+    return jsonify({'analysis_results': results_over_morale})
+
+
+@game_bp.route('/batch_odds', methods=['POST'])
+def batch_odds():
+    if 'username' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    data = request.get_json()
+    # MODIFIED: Check for the new morale_params in the request
+    if not data or 'enemy_team_id' not in data or 'user_team_players' not in data or 'runs' not in data or 'morale_params' not in data:
+        return jsonify({'error': 'Invalid request data'}), 400
+
+    user_team_id = session.get('selected_team_id')
+    if not user_team_id:
+        return jsonify({'error': 'No team selected'}), 400
+
+    runs = int(data.get('runs', 10))
+    runs = max(1, min(runs, 100))
+
+    user_team_model = Team.query.get(user_team_id)
+    enemy_team_model = Team.query.get(data.get('enemy_team_id'))
+    if not user_team_model or not enemy_team_model:
+        return jsonify({'error': 'Invalid team ID provided'}), 404
+
+    # NEW: Get the workbench's morale parameters from the request
+    morale_params_from_request = data.get('morale_params', {})
+
+    # MODIFIED: Update player stats to include all new editable attributes
+    modified_stats = {
+        int(p['id']): {
+            'skill': int(p['skill']),
+            'shape': int(p['shape']),
+            'morale': int(p['morale']), # NEW
+            'personality': p.get('personality'), # NEW
+            'free_kick_ability': int(p.get('free_kick_ability', 50)),
+            'penalty_taking': int(p.get('penalty_taking', 50))
+        } for p in data['user_team_players']
+    }
+
+    # MODIFIED: Apply all temporary changes from the workbench to the in-memory player objects
+    for player in user_team_model.players:
+        if player.id in modified_stats:
+            stats = modified_stats[player.id]
+            player.skill = stats['skill']
+            player.shape = stats['shape']
+            player.morale = stats['morale'] # NEW
+            player.free_kick_ability = stats['free_kick_ability']
+            player.penalty_taking = stats['penalty_taking']
+            # NEW: Safely update personality if it exists
+            if stats.get('personality'):
+                try:
+                    player.personality = Personality[stats['personality'].upper()]
+                except KeyError:
+                    pass # Ignore if personality is invalid
+
+    fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
+
+    # Accumulators
+    user_home_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+    user_away_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+    enemy_home_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+    enemy_away_acc = {'win_prob': [], 'draw_prob': [], 'loss_prob': [], 'avg_goals_for': [], 'avg_goals_against': []}
+
+    sims_per_run = None
+
+    for _ in range(runs):
+        res = get_prematch_odds(
+            user_team_model=user_team_model,
+            enemy_team_model=enemy_team_model,
+            fixed_user_lineup_ids=fixed_lineup_ids
+        )
+        sims_per_run = res.get('simulations_run', sims_per_run)
+
+        hf = res['home_fixture']['probs']  # user at home
+        af = res['away_fixture']['probs']  # enemy at home
+
+        # User perspective (home)
+        user_home_acc['win_prob'].append(float(hf['win_prob']))
+        user_home_acc['draw_prob'].append(float(hf['draw_prob']))
+        user_home_acc['loss_prob'].append(float(hf['loss_prob']))
+        user_home_acc['avg_goals_for'].append(float(hf['avg_goals_for']))
+        user_home_acc['avg_goals_against'].append(float(hf['avg_goals_against']))
+
+        # User perspective (away) — flip away fixture
+        user_away_acc['win_prob'].append(float(af['loss_prob']))
+        user_away_acc['draw_prob'].append(float(af['draw_prob']))
+        user_away_acc['loss_prob'].append(float(af['win_prob']))
+        user_away_acc['avg_goals_for'].append(float(af['avg_goals_against']))
+        user_away_acc['avg_goals_against'].append(float(af['avg_goals_for']))
+
+        # Enemy perspective (home) — away fixture as-is
+        enemy_home_acc['win_prob'].append(float(af['win_prob']))
+        enemy_home_acc['draw_prob'].append(float(af['draw_prob']))
+        enemy_home_acc['loss_prob'].append(float(af['loss_prob']))
+        enemy_home_acc['avg_goals_for'].append(float(af['avg_goals_for']))
+        enemy_home_acc['avg_goals_against'].append(float(af['avg_goals_against']))
+
+        # Enemy perspective (away) — flip user home fixture
+        enemy_away_acc['win_prob'].append(float(hf['loss_prob']))
+        enemy_away_acc['draw_prob'].append(float(hf['draw_prob']))
+        enemy_away_acc['loss_prob'].append(float(hf['win_prob']))
+        enemy_away_acc['avg_goals_for'].append(float(hf['avg_goals_against']))
+        enemy_away_acc['avg_goals_against'].append(float(hf['avg_goals_for']))
+
+    def summarize(acc):
+        means = {k: (statistics.fmean(v) if v else 0.0) for k, v in acc.items()}
+        stddevs = {k: (statistics.pstdev(v) if len(v) > 1 else 0.0) for k, v in acc.items()}
+        return {'means': means, 'stddevs': stddevs}
+
+    db.session.expunge_all() # Expunge all to avoid keeping temporary changes
+
+    return jsonify({
+        'runs': runs,
+        'simulations_per_run': sims_per_run,
+        'user_team_name': user_team_model.name,
+        'enemy_team_name': enemy_team_model.name,
+        'user': {
+            'home': summarize(user_home_acc),
+            'away': summarize(user_away_acc)
+        },
+        'enemy': {
+            'home': summarize(enemy_home_acc),
+            'away': summarize(enemy_away_acc)
+        }
+    })
+
+====================
+File: textfootball\core\match_simulator.py
+====================
+# textfootball/core/match_simulator.py
+
+import random
+import math
+# NEW: Import Personality and db
+# We must ensure Personality is imported after it's defined in models.player
+from textfootball.models import Team, Player, Position, Personality
+from textfootball import db # We need db access to commit morale changes
+
+# ===========================
+# Configuration / Tunables
+# ===========================
+
+# Formation (remains the same)
+FORMATION = {
+    Position.GOALKEEPER: 1,
+    Position.DEFENDER: 4,
+    Position.MIDFIELDER: 4,
+    Position.FORWARD: 2
+}
+
+# Home advantage (remains the same)
+HOME_ADVANTAGE_BOOST = 1.03
+
+# Flow & scoring (remains the same)
+MIDFIELD_SCALING = 32
+ATTACK_SCALING = 32
+GOAL_CONVERSION_FACTOR = 0.8
+
+# Goalkeeper-specific (remains the same)
+DEF_GK_BLEND = 0.18
+GK_SHOT_SCALING = 30
+SHOOTER_NOISE_MIN = 0.85
+SHOOTER_NOISE_MAX = 1.15
+GK_NOISE_MIN = 0.92
+GK_NOISE_MAX = 1.08
+
+# Free Kick (FK) Tuning Knobs (remains the same)
+AVG_FREE_KICKS_PER_GAME = 0
+FREE_KICK_VARIANCE = 0
+FK_ZONES = {
+    'DEEP':     (0.25, 0.00, 0.05, 1.00),
+    'MIDDLE':   (0.50, 0.02, 0.40, 0.90),
+    'ATTACKING': (0.17, 0.30, 0.70, 0.75),
+    'DANGEROUS': (0.08, 0.85, 0.15, 0.60),
+}
+FK_SHOT_SCALING = 24
+FK_GOAL_CONVERSION_FACTOR_BASE = 0.60
+
+# Penalty Kick Tuning Knobs (remains the same)
+PENALTY_AWARD_PROBABILITY = 0.03
+PENALTY_SCALING = 20
+PENALTY_CONVERSION_FACTOR = 1.15
+
+# ---------------------------------------
+# Morale System Tuning Knobs (NEW)
+# ---------------------------------------
+# The 'why': These parameters allow game designers to balance the psychological aspect of the game.
+
+# Base morale change for a win/loss/draw.
+MORALE_BASE_WIN = 8
+MORALE_BASE_LOSS = -10
+MORALE_BASE_DRAW = 1
+
+# Multiplier applied based on the margin of victory/defeat.
+MORALE_MARGIN_THRESHOLD = 3
+MORALE_MARGIN_MULTIPLIER = 1.5
+
+# Bonus morale for individual performance.
+MORALE_GOAL_BONUS = 3
+MORALE_HAT_TRICK_BONUS = 10
+
+# The baseline morale that non-participants drift towards and the rate.
+MORALE_DRIFT_TARGET = 75
+MORALE_DRIFT_RATE = 0.05
+
+# NEW: Temporary flag to disable morale adjustments for balancing purposes.
+# Set to 0 to skip post-match morale updates.
+# Change to 1 to enable morale updates.
+# Note: This is separate from MORALE_EFFECT_ACTIVE in player.py, which controls effect on skills.
+MORALE_EFFECT_ACTIVE = 0
+
+
+# ... (logistic_probability and goal_probability functions remain the same) ...
+def logistic_probability(strength_a, strength_b, scaling_factor):
+    diff = strength_a - strength_b
+    try:
+        exponent = -diff / scaling_factor
+        if exponent > 10: return 0.0
+        elif exponent < -10: return 1.0
+        else: return 1 / (1 + math.exp(exponent))
+    except OverflowError:
+        return 1.0 if diff > 0 else 0.0
+
+def goal_probability(shooter_eff: float, keeper_eff: float, scaling=GK_SHOT_SCALING, conversion_factor=GOAL_CONVERSION_FACTOR) -> float:
+    rand_shooter = shooter_eff * random.uniform(SHOOTER_NOISE_MIN, SHOOTER_NOISE_MAX)
+    rand_keeper = keeper_eff * random.uniform(GK_NOISE_MIN, GK_NOISE_MAX)
+    diff = rand_shooter - rand_keeper
+    try:
+        exponent = -diff / scaling
+        if exponent > 10: base = 0.0
+        elif exponent < -10: base = 1.0
+        else: base = 1 / (1 + math.exp(exponent))
+    except OverflowError:
+        base = 1.0 if diff > 0 else 0.0
+    return min(1.0, base * conversion_factor)
+
+class MatchTeam:
+    def __init__(self, team_model, is_home=False, fixed_lineup_ids=None):
+        self.team = team_model
+        self.is_home = is_home
+        self.fixed_lineup_ids = fixed_lineup_ids
+        self.lineup = {}
+        self.base_zonal_strength = {}
+        self.zonal_strength = {}
+        self.avg_shape = 0
+        self.avg_base_skill = 0
+        self.avg_effective_skill = 0
+        # NEW: Track average morale of the starting 11.
+        self.avg_morale = 0
+        self.score = 0
+        # NEW: Track individual player stats (key: player ID, value: goals scored)
+        self.player_stats = {}
+
+        self.select_lineup()
+        self.calculate_zonal_strength()
+        self.best_fk_taker = self._find_best_fk_taker()
+        self.best_penalty_taker = self._find_best_penalty_taker()
+        self._initialize_player_stats()
+
+    def _initialize_player_stats(self):
+        """ Initialize tracking for all players in the squad. """
+        for player in self.team.players:
+            self.player_stats[player.id] = {'goals': 0}
+
+    def record_goal(self, player):
+        """ Records a goal scored by a player. """
+        if player and player.id in self.player_stats:
+            self.player_stats[player.id]['goals'] += 1
+
+    # ... (get_starting_11, _find_best_fk_taker, _find_best_penalty_taker remain the same) ...
+    def get_starting_11(self):
+        return [p for players in self.lineup.values() for p in players]
+
+    def _find_best_fk_taker(self):
+        starting_11 = self.get_starting_11()
+        if not starting_11: return None
+        return max(starting_11, key=lambda p: getattr(p, 'free_kick_ability', 50))
+
+    def _find_best_penalty_taker(self):
+        starting_11 = self.get_starting_11()
+        if not starting_11: return None
+        return max(starting_11, key=lambda p: getattr(p, 'penalty_taking', 50))
+
+    def select_lineup(self):
+        if self.fixed_lineup_ids:
+            fixed_players = [p for p in self.team.players if p.id in self.fixed_lineup_ids]
+            self.lineup = {pos: [] for pos in Position}
+            for p in fixed_players: self.lineup[p.position].append(p)
+        else:
+            # Lineup selection now considers the morale-influenced effective_skill.
+            sorted_players = sorted(self.team.players, key=lambda p: p.effective_skill, reverse=True)
+            self.lineup = {pos: [] for pos in Position}
+            squad_count = 0
+            for pos, count in FORMATION.items():
+                candidates = [p for p in sorted_players if p.position == pos and p not in self.get_starting_11()]
+                selected = candidates[:count]
+                self.lineup[pos].extend(selected)
+                squad_count += len(selected)
+            if squad_count < 11:
+                remaining_players = [p for p in sorted_players if p not in self.get_starting_11()]
+                for player in remaining_players[:11 - squad_count]:
+                    self.lineup[player.position].append(player)
+
+        starting_11 = self.get_starting_11()
+        if starting_11:
+            self.avg_base_skill = sum(p.skill for p in starting_11) / len(starting_11)
+            self.avg_shape = sum(p.shape for p in starting_11) / len(starting_11)
+            self.avg_effective_skill = sum(p.effective_skill for p in starting_11) / len(starting_11)
+            # NEW: Calculate average morale of the starting 11.
+            self.avg_morale = sum(p.morale for p in starting_11) / len(starting_11)
+
+    def calculate_zonal_strength(self):
+        for pos in Position:
+            players = self.lineup.get(pos, [])
+            # Zonal strength calculation uses the morale-influenced effective_skill.
+            base_strength = sum(p.effective_skill for p in players) / len(players) if players else 20
+            self.base_zonal_strength[pos] = base_strength
+            self.zonal_strength[pos] = base_strength * HOME_ADVANTAGE_BOOST if self.is_home else base_strength
+
+    # ... (get_random_player, get_goalkeeper remain the same) ...
+    def get_random_player(self, positions):
+        candidates = [p for pos in positions for p in self.lineup.get(pos, [])]
+        return random.choice(candidates) if candidates else None
+
+    def get_goalkeeper(self):
+        gk_list = self.lineup.get(Position.GOALKEEPER, [])
+        return gk_list[0] if gk_list else None
+
+    def get_stats_dict(self):
+        return {
+            'name': self.team.name, 'is_home': self.is_home,
+            'avg_base_skill': self.avg_base_skill, 'avg_shape': self.avg_shape, 'avg_effective_skill': self.avg_effective_skill,
+            # NEW: Include morale in the stats dictionary for analysis.
+            'avg_morale': self.avg_morale,
+            'base_zonal_strength': {pos.name: strength for pos, strength in self.base_zonal_strength.items()},
+            'zonal_strength': {pos.name: strength for pos, strength in self.zonal_strength.items()},
+            # Updated to include morale and personality in lineup data
+            'lineup': [{'name': p.name, 'position': p.position.value, 'skill': p.skill, 'shape': p.shape, 'morale': p.morale, 'personality': p.personality.value, 'fk_ability': getattr(p, 'free_kick_ability', 50), 'penalty_taking': getattr(p, 'penalty_taking', 50), 'id': p.id} for p in self.get_starting_11()]
+        }
+
+class MatchSimulator:
+    # NEW: Added morale_params argument.
+    def __init__(self, team_a_model, team_b_model, logging_enabled=True, fixed_a_ids=None, fixed_b_ids=None, is_knockout=False, morale_params=None):
+        # NEW: Allow overriding default morale parameters (for the workbench).
+        self.morale_params = self._get_morale_params(morale_params)
+
+        # Modified initialization to handle None models (for workbench analysis)
+        self.team_a = MatchTeam(team_a_model, is_home=True, fixed_lineup_ids=fixed_a_ids) if team_a_model else None
+        self.team_b = MatchTeam(team_b_model, is_home=False, fixed_lineup_ids=fixed_b_ids) if team_b_model else None
+        self.logging_enabled = logging_enabled
+        self.is_knockout = is_knockout
+        self.log = []
+        self.minute = 0
+        self.zone = 'M'
+
+        if self.team_a and self.team_b:
+            self.possession = random.choice([self.team_a, self.team_b])
+            self.free_kick_events = self._generate_free_kicks()
+        else:
+            self.possession = None
+            self.free_kick_events = []
+
+        self.shootout_score_a = 0
+        self.shootout_score_b = 0
+        self.winner_on_penalties = None
+        # NEW: Flag to track if this simulation should update the database.
+        self.commit_changes = False
+
+    def _get_morale_params(self, overrides):
+        """ Helper to merge default morale parameters with any overrides. """
+        params = {
+            'MORALE_BASE_WIN': MORALE_BASE_WIN,
+            'MORALE_BASE_LOSS': MORALE_BASE_LOSS,
+            'MORALE_BASE_DRAW': MORALE_BASE_DRAW,
+            'MORALE_MARGIN_THRESHOLD': MORALE_MARGIN_THRESHOLD,
+            'MORALE_MARGIN_MULTIPLIER': MORALE_MARGIN_MULTIPLIER,
+            'MORALE_GOAL_BONUS': MORALE_GOAL_BONUS,
+            'MORALE_HAT_TRICK_BONUS': MORALE_HAT_TRICK_BONUS,
+            'MORALE_DRIFT_TARGET': MORALE_DRIFT_TARGET,
+            'MORALE_DRIFT_RATE': MORALE_DRIFT_RATE,
+        }
+        if overrides:
+            params.update(overrides)
+        return params
+
+    # ... (_generate_free_kicks, log_event remain the same) ...
+    def _generate_free_kicks(self):
+        num_kicks = max(10, int(random.gauss(AVG_FREE_KICKS_PER_GAME, FREE_KICK_VARIANCE)))
+        events = []
+        zone_names, likelihoods = list(FK_ZONES.keys()), [z[0] for z in FK_ZONES.values()]
+        for _ in range(num_kicks):
+            events.append({
+                'minute': random.randint(1, 90),
+                'team': self.team_a if random.random() < 0.5 else self.team_b,
+                'zone': random.choices(zone_names, weights=likelihoods, k=1)[0]
+            })
+        events.sort(key=lambda e: e['minute'])
+        return events
+
+    def log_event(self, message, importance='normal', event_type=None, details=None):
+        if not self.logging_enabled: return
+        self.log.append({'minute': self.minute, 'message': message, 'importance': importance, 'event_type': event_type, 'details': details})
+
+    def simulate(self, commit_changes=False):
+        # Set the flag based on the caller's intention.
+        self.commit_changes = commit_changes
+
+        if not self.team_a or not self.team_b:
+             self.log_event("Match abandoned due to missing team models.", importance='error')
+             return self.get_results()
+
+        if len(self.team_a.get_starting_11()) < 11 or len(self.team_b.get_starting_11()) < 11:
+            self.log_event("Match abandoned due to insufficient players.", importance='error')
+            return self.get_results()
+
+        if self.logging_enabled:
+            self.log_event(f"Kickoff! (Total FKs scheduled: {len(self.free_kick_events)})", importance='info')
+
+        while self.minute < 90:
+            self._process_scheduled_free_kicks()
+            if self.minute >= 90: break
+            time_increment = random.randint(1, 6)
+            last_minute = self.minute
+            self.minute += time_increment
+            if self.minute > 90: self.minute = 90
+            if self.logging_enabled and last_minute < 45 and self.minute >= 45: self.log_event("Halftime", importance='info')
+            self.process_event()
+
+        if self.logging_enabled:
+            self.log_event(f"Full Time! Final score: {self.team_a.score} - {self.team_b.score}", importance='final')
+
+        if self.is_knockout and self.team_a.score == self.team_b.score:
+            self.resolve_shootout()
+
+        # NEW: Apply post-match updates (Morale).
+        if MORALE_EFFECT_ACTIVE == 1:
+            self.apply_post_match_morale_updates()
+
+        return self.get_results()
+
+    # ... (Simulation methods: _process_scheduled_free_kicks, process_event, resolve_free_kick, resolve_midfield_battle, resolve_attack remain the same) ...
+    def _process_scheduled_free_kicks(self):
+        while self.free_kick_events and self.free_kick_events[0]['minute'] <= self.minute:
+            fk_event = self.free_kick_events.pop(0)
+            self.minute = fk_event['minute']
+            self.resolve_free_kick(fk_event)
+
+    def process_event(self):
+        if not self.possession: self.possession = random.choice([self.team_a, self.team_b])
+        if self.zone == 'M': self.resolve_midfield_battle()
+        elif self.zone == 'A': self.resolve_attack(self.team_a, self.team_b)
+        elif self.zone == 'B': self.resolve_attack(self.team_b, self.team_a)
+
+    def resolve_free_kick(self, fk_event):
+        attacker = fk_event['team']
+        defender = self.team_b if attacker == self.team_a else self.team_a
+        zone, (_, p_direct, p_indirect_attack, def_mod) = fk_event['zone'], FK_ZONES[fk_event['zone']]
+        self.log_event(f"Free Kick to {attacker.team.name} in a {zone.lower()} position.", event_type='FREE_KICK', importance='set_piece')
+        action_roll = random.random()
+        if action_roll < p_direct:
+            self.resolve_direct_free_kick(attacker, defender, zone)
+        elif action_roll < (p_direct + p_indirect_attack):
+            self.log_event(f"{attacker.team.name} sends a cross or pass into the attacking zone.", event_type='INDIRECT_FK_ATTACK')
+            self.possession = attacker
+            self.zone = 'A' if attacker == self.team_a else 'B'
+            self.resolve_attack(attacker, defender, defense_modifier=def_mod)
+        else:
+            self.log_event(f"{attacker.team.name} restarts play safely.", event_type='FK_RESTART', importance='minor')
+            self.possession = attacker
+            self.zone = 'M'
+
+    def resolve_direct_free_kick(self, attacker, defender, zone):
+        taker, goalkeeper = attacker.best_fk_taker, defender.get_goalkeeper()
+        if not taker or not goalkeeper: return
+        self.log_event(f"{taker.name} steps up to take the direct free kick.", importance='high', event_type='DIRECT_FK')
+        dist_factor = {'DANGEROUS': 1.3, 'ATTACKING': 0.8, 'MIDDLE': 0.3}.get(zone, 0.1)
+        final_conv_factor = FK_GOAL_CONVERSION_FACTOR_BASE * dist_factor
+        prob = goal_probability(taker.effective_fk_ability, goalkeeper.effective_skill, scaling=FK_SHOT_SCALING, conversion_factor=final_conv_factor)
+        roll = random.random()
+        if roll < prob:
+            attacker.score += 1
+            # NEW: Record the goal for morale updates.
+            attacker.record_goal(taker)
+            if self.logging_enabled:
+                details = f"Direct FK ({zone}): {taker.name} (Eff FK: {taker.effective_fk_ability:.1f}) vs {goalkeeper.name} (Eff GK: {goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> GOAL"
+                self.log_event(f"GOAL! {taker.name}! ({self.team_a.score}-{self.team_b.score})", importance='goal', event_type='GOAL_FK', details=details)
+            self.possession = defender
+            self.zone = 'M'
+        else:
+            if self.logging_enabled:
+                details = f"Direct FK ({zone}): {taker.name} (Eff FK: {taker.effective_fk_ability:.1f}) vs {goalkeeper.name} (Eff GK: {goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> NO GOAL"
+                self.log_event(f"NO GOAL! The free kick is saved or missed.", importance='miss', event_type='MISS_FK', details=details)
+            self.possession = defender
+            self.zone = 'M'
+
+    def resolve_midfield_battle(self):
+        attacker, defender = (self.possession, self.team_b) if self.possession == self.team_a else (self.possession, self.team_a)
+        att_str, def_str = attacker.zonal_strength[Position.MIDFIELDER], defender.zonal_strength[Position.MIDFIELDER]
+        prob, roll = logistic_probability(att_str, def_str, MIDFIELD_SCALING), random.random()
+        if roll < prob:
+            self.zone = 'A' if attacker == self.team_a else 'B'
+            if self.logging_enabled: self.log_event(f"{attacker.team.name} advances.")
+        else:
+            self.possession = defender
+            if self.logging_enabled: self.log_event(f"{defender.team.name} wins the ball.")
+
+    def resolve_attack(self, attacker, defender, defense_modifier=1.0):
+        att_str = attacker.zonal_strength[Position.FORWARD]
+        pure_def, gk_str = defender.zonal_strength[Position.DEFENDER], defender.zonal_strength[Position.GOALKEEPER]
+        def_gate = ((1.0 - DEF_GK_BLEND) * pure_def + DEF_GK_BLEND * gk_str) * defense_modifier
+        prob, roll = logistic_probability(att_str, def_gate, ATTACK_SCALING), random.random()
+        if roll < prob:
+            if self.logging_enabled: self.log_event(f"{attacker.team.name} creates a chance!", event_type='SHOT_OPPORTUNITY')
+            self.resolve_shot(attacker, defender)
+        else:
+            if random.random() < PENALTY_AWARD_PROBABILITY:
+                self.log_event(f"PENALTY to {attacker.team.name}!", event_type='PENALTY_AWARDED', importance='high')
+                self.resolve_penalty_kick(attacker, defender)
+            else:
+                self.possession = defender
+                self.zone = 'M'
+                if self.logging_enabled: self.log_event(f"{defender.team.name}'s defense holds firm.", event_type='DEFENSIVE_STOP')
+
+    def resolve_shot(self, attacker, defender):
+        shooter, goalkeeper = attacker.get_random_player([Position.FORWARD, Position.MIDFIELDER]), defender.get_goalkeeper()
+        if not shooter or not goalkeeper:
+            self.possession, self.zone = defender, 'M'
+            return
+        prob, roll = goal_probability(shooter.effective_skill, goalkeeper.effective_skill), random.random()
+        if roll < prob:
+            attacker.score += 1
+            # NEW: Record the goal for morale updates.
+            attacker.record_goal(shooter)
+            if self.logging_enabled:
+                details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> GOAL"
+                self.log_event(f"GOAL! {shooter.name}! ({self.team_a.score}-{self.team_b.score})", importance='goal', event_type='GOAL', details=details)
+        else:
+            if self.logging_enabled:
+                details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> NO GOAL"
+                self.log_event(f"NO GOAL! Shot by {shooter.name}.", importance='miss', event_type='MISS', details=details)
+        self.possession, self.zone = defender, 'M'
+
+    def resolve_penalty_kick(self, attacker, defender, taker=None, is_shootout_kick=False):
+        # ... (initialization and probability calculation remains the same)
+        if taker is None: taker = attacker.best_penalty_taker
+        goalkeeper = defender.get_goalkeeper()
+        if not taker or not goalkeeper: return False
+
+        prob, roll = goal_probability(taker.effective_penalty_taking, goalkeeper.effective_penalty_saving, scaling=PENALTY_SCALING, conversion_factor=PENALTY_CONVERSION_FACTOR), random.random()
+        is_goal = roll < prob
+
+        if self.logging_enabled:
+             # ... (logging details remain the same)
+            details = (f"Penalty: {taker.name} (Eff Pen: {taker.effective_penalty_taking:.1f}) vs {goalkeeper.name} (Eff Save: {goalkeeper.effective_penalty_saving:.1f})\n"
+                       f"- Pen Scaling: {PENALTY_SCALING}, Conv Factor: {PENALTY_CONVERSION_FACTOR:.2f}\n"
+                       f"- Prob: {prob:.1%}, Roll: {roll:.3f} -> {'GOAL' if is_goal else 'NO GOAL'}")
+            if is_shootout_kick:
+                msg = f"GOAL! {taker.name} scores." if is_goal else f"SAVED! {goalkeeper.name} denies {taker.name}!"
+                self.log_event(msg, importance='high', event_type='SHOOTOUT_KICK', details=details)
+            else:
+                if is_goal: self.log_event(f"GOAL! {taker.name} converts! ({self.team_a.score+1 if attacker == self.team_a else self.team_a.score}-{self.team_b.score+1 if attacker == self.team_b else self.team_b.score})", importance='goal', event_type='GOAL_PENALTY', details=details)
+                else: self.log_event(f"MISSED! {taker.name}'s penalty is saved or wide!", importance='miss', event_type='MISS_PENALTY', details=details)
+
+        if not is_shootout_kick:
+            if is_goal: 
+                attacker.score += 1
+                # NEW: Record the goal for morale updates.
+                attacker.record_goal(taker)
+            self.possession, self.zone = defender, 'M'
+
+        return is_goal
+
+    # ... (resolve_shootout remains the same) ...
+    def resolve_shootout(self):
+        self.log_event("The match is drawn. A penalty shootout will decide the winner!", importance='final', event_type='SHOOTOUT_START')
+        team_a_players = [p for p in self.team_a.get_starting_11() if p.position != Position.GOALKEEPER]
+        team_b_players = [p for p in self.team_b.get_starting_11() if p.position != Position.GOALKEEPER]
+        team_a_takers = sorted(team_a_players, key=lambda p: p.penalty_taking, reverse=True)[:5]
+        team_b_takers = sorted(team_b_players, key=lambda p: p.penalty_taking, reverse=True)[:5]
+
+        for i in range(5):
+            self.log_event(f"--- Shootout Round {i+1} ---", importance='info')
+            if self.resolve_penalty_kick(self.team_a, self.team_b, taker=team_a_takers[i], is_shootout_kick=True): self.shootout_score_a += 1
+            if self.shootout_score_a > self.shootout_score_b + (5 - i) or self.shootout_score_b > self.shootout_score_a + (4 - i): break
+            if self.resolve_penalty_kick(self.team_b, self.team_a, taker=team_b_takers[i], is_shootout_kick=True): self.shootout_score_b += 1
+            self.log_event(f"Score: {self.team_a.team.name} {self.shootout_score_a} - {self.shootout_score_b} {self.team_b.team.name}", importance='info')
+            if self.shootout_score_a > self.shootout_score_b + (4 - i) or self.shootout_score_b > self.shootout_score_a + (4 - i): break
+
+        if self.shootout_score_a == self.shootout_score_b:
+            self.log_event("--- Sudden Death ---", importance='info')
+            rem_a = [p for p in team_a_players if p not in team_a_takers] or team_a_takers
+            rem_b = [p for p in team_b_players if p not in team_b_takers] or team_b_takers
+            round_num = 0
+            while self.shootout_score_a == self.shootout_score_b:
+                self.log_event(f"--- Sudden Death Round {round_num + 1} ---", importance='info')
+                goal_a = self.resolve_penalty_kick(self.team_a, self.team_b, taker=rem_a[round_num % len(rem_a)], is_shootout_kick=True)
+                goal_b = self.resolve_penalty_kick(self.team_b, self.team_a, taker=rem_b[round_num % len(rem_b)], is_shootout_kick=True)
+                if goal_a: self.shootout_score_a += 1
+                if goal_b: self.shootout_score_b += 1
+                self.log_event(f"Score: {self.team_a.team.name} {self.shootout_score_a} - {self.shootout_score_b} {self.team_b.team.name}", importance='info')
+                round_num += 1
+
+        self.winner_on_penalties = self.team_a.team.name if self.shootout_score_a > self.shootout_score_b else self.team_b.team.name
+        self.log_event(f"{self.winner_on_penalties} wins the shootout {self.shootout_score_a}-{self.shootout_score_b}!", importance='final', event_type='SHOOTOUT_END')
+
+
+    # =====================================
+    # Post-Match Morale Updates (NEW)
+    # =====================================
+
+    def apply_post_match_morale_updates(self):
+        """
+        NEW: Calculates and applies morale changes to both teams after the match.
+        This function implements the core dynamic feedback loop of the morale system.
+        """
+        # Determine the result and margin for both teams.
+        score_a, score_b = self.team_a.score, self.team_b.score
+
+        # Handle penalty shootout winners (they count as a win, but margin is ignored).
+        if self.winner_on_penalties:
+            result_a = 'WIN' if self.winner_on_penalties == self.team_a.team.name else 'LOSS'
+            result_b = 'LOSS' if result_a == 'WIN' else 'WIN'
+            margin_a = margin_b = 0
+        elif score_a > score_b:
+            result_a, result_b = 'WIN', 'LOSS'
+            margin_a, margin_b = score_a - score_b, score_b - score_a
+        elif score_b > score_a:
+            result_a, result_b = 'LOSS', 'WIN'
+            margin_a, margin_b = score_a - score_b, score_b - score_a
+        else:
+            result_a = result_b = 'DRAW'
+            margin_a = margin_b = 0
+
+        self._process_team_morale(self.team_a, result_a, margin_a)
+        self._process_team_morale(self.team_b, result_b, margin_b)
+
+        # Commit changes to the database if this was a real match (not analysis).
+        if self.commit_changes:
+            try:
+                db.session.commit()
+                self.log_event("Post-match morale updates committed to database.", importance='system')
+            except Exception as e:
+                db.session.rollback()
+                self.log_event(f"Error committing morale updates: {e}", importance='error', event_type='DB_ERROR')
+
+    def _process_team_morale(self, match_team, result, margin):
+        """ Processes morale updates for a single team based on results, performance, and personality. """
+        params = self.morale_params
+
+        # Determine base morale change and margin multiplier.
+        if result == 'WIN':
+            base_change = params['MORALE_BASE_WIN']
+            is_positive = True
+            is_significant = margin >= params['MORALE_MARGIN_THRESHOLD']
+        elif result == 'LOSS':
+            base_change = params['MORALE_BASE_LOSS']
+            is_positive = False
+            is_significant = abs(margin) >= params['MORALE_MARGIN_THRESHOLD']
+        else: # DRAW
+            base_change = params['MORALE_BASE_DRAW']
+            # Draw is positive if morale is currently low, negative if morale is high.
+            is_positive = match_team.avg_morale < params['MORALE_DRIFT_TARGET']
+            is_significant = False
+
+        margin_multiplier = params['MORALE_MARGIN_MULTIPLIER'] if is_significant else 1.0
+
+        starting_11_ids = {p.id for p in match_team.get_starting_11()}
+
+        for player in match_team.team.players:
+            # 1. Calculate the outcome-based change (for participants only).
+            outcome_change = 0
+            if player.id in starting_11_ids:
+                personality_multiplier = player.get_personality_multiplier(is_positive)
+                # Apply the full calculation: Base * Margin * Personality
+                outcome_change = base_change * margin_multiplier * personality_multiplier
+
+            # 2. Calculate performance-based change (goals).
+            performance_change = 0
+            goals_scored = match_team.player_stats[player.id]['goals']
+            if goals_scored >= 3:
+                performance_change = params['MORALE_HAT_TRICK_BONUS']
+            elif goals_scored > 0:
+                performance_change = goals_scored * params['MORALE_GOAL_BONUS']
+
+            # 3. Calculate drift (for non-participants only).
+            drift_change = 0
+            if player.id not in starting_11_ids:
+                distance_to_target = params['MORALE_DRIFT_TARGET'] - player.morale
+                drift_change = distance_to_target * params['MORALE_DRIFT_RATE']
+
+            # 4. Combine and apply the changes.
+            total_change = int(round(outcome_change + performance_change + drift_change))
+
+            # Apply the change, clamping between 0 and 100.
+            new_morale = max(0, min(100, player.morale + total_change))
+
+            # Update the player object (this is tracked by SQLAlchemy session).
+            # We capture the old morale for logging before updating.
+            old_morale = player.morale
+            player.morale = new_morale
+
+            # Optional: Detailed logging for debugging/transparency.
+            if self.logging_enabled and abs(total_change) > 0:
+                log_details = (f"Player: {player.name} ({player.personality.value}), Result: {result} (Margin {margin}), "
+                               f"Goals: {goals_scored}.\n"
+                               f"Changes -> Outcome: {outcome_change:.1f}, Performance: {performance_change:.1f}, Drift: {drift_change:.1f}.\n"
+                               f"Total: {total_change}. Morale: {old_morale} -> {player.morale}")
+                self.log_event(f"{player.name} morale change: {total_change:+d}", importance='minor', event_type='MORALE_UPDATE', details=log_details)
+
+
+    def get_results(self):
+        # Updated to handle cases where teams might be None
+        return {
+            'log': self.log,
+            'score_a': self.team_a.score if self.team_a else 0,
+            'score_b': self.team_b.score if self.team_b else 0,
+            'team_a_name': self.team_a.team.name if self.team_a else 'N/A',
+            'team_b_name': self.team_b.team.name if self.team_b else 'N/A',
+            'shootout_score_a': self.shootout_score_a,
+            'shootout_score_b': self.shootout_score_b,
+            'winner_on_penalties': self.winner_on_penalties,
+        }
+
+# =====================================
+# Helper Functions
+# =====================================
+
+def simulate_match(team_a_id, team_b_id, is_knockout=False):
+    """ Helper to run a single, fully-logged match. Now updates the database. """
+    team_a, team_b = Team.query.get(team_a_id), Team.query.get(team_b_id)
+    if not team_a or not team_b:
+        return {'log': [{'message': 'Invalid Teams'}], 'score_a': 0, 'score_b': 0, 'team_a_name': '?', 'team_b_name': '?'}
+
+    # NEW: commit_changes=True ensures that morale updates are saved.
+    simulator = MatchSimulator(team_a, team_b, logging_enabled=True, is_knockout=is_knockout)
+    return simulator.simulate(commit_changes=True)
+
+# textfootball/core/match_simulator.py
+
+# MODIFIED: This is the function you need to replace.
+def get_prematch_odds(user_team_id=None, enemy_team_id=None, simulations=100, user_team_model=None, enemy_team_model=None, fixed_user_lineup_ids=None, morale_params=None):
+    """ Helper to run many non-logged simulations for statistical analysis. """
+    if not user_team_model and user_team_id: user_team_model = Team.query.get(user_team_id)
+    if not enemy_team_model and enemy_team_id: enemy_team_model = Team.query.get(enemy_team_id)
+    if not user_team_model or not enemy_team_model: return {'error': 'Invalid teams'}
+
+    user_team_home = MatchTeam(user_team_model, is_home=True, fixed_lineup_ids=fixed_user_lineup_ids)
+    user_team_away = MatchTeam(user_team_model, is_home=False, fixed_lineup_ids=fixed_user_lineup_ids)
+    enemy_team_home = MatchTeam(enemy_team_model, is_home=True)
+    enemy_team_away = MatchTeam(enemy_team_model, is_home=False)
+
+    def _run_fixture_sims(home_team_model, away_team_model, fixed_home_ids=None, fixed_away_ids=None):
+        wins, draws, losses, goals_for, goals_against = 0, 0, 0, 0, 0
+        for _ in range(simulations):
+            # MODIFIED: Pass the morale_params to the simulator.
+            simulator = MatchSimulator(
+                home_team_model,
+                away_team_model,
+                logging_enabled=False,
+                fixed_a_ids=fixed_home_ids,
+                fixed_b_ids=fixed_away_ids,
+                is_knockout=False,
+                morale_params=morale_params # This is the crucial addition
+            )
+            result = simulator.simulate(commit_changes=False)
+
+            goals_for, goals_against = goals_for + result['score_a'], goals_against + result['score_b']
+            if result['score_a'] > result['score_b']: wins += 1
+            elif result['score_b'] > result['score_a']: losses += 1
+            else: draws += 1
+        return {'win_prob': (wins/simulations)*100, 'draw_prob': (draws/simulations)*100, 'loss_prob': (losses/simulations)*100, 'avg_goals_for': goals_for/simulations, 'avg_goals_against': goals_against/simulations}
+
+    home_fixture_probs = _run_fixture_sims(user_team_model, enemy_team_model, fixed_home_ids=fixed_user_lineup_ids)
+    away_fixture_probs = _run_fixture_sims(enemy_team_model, user_team_model, fixed_away_ids=fixed_user_lineup_ids)
+
+    return {
+        'home_fixture': {'probs': home_fixture_probs, 'stats': {'user_team': user_team_home.get_stats_dict(), 'enemy_team': enemy_team_away.get_stats_dict()}},
+        'away_fixture': {'probs': away_fixture_probs, 'stats': {'user_team': user_team_away.get_stats_dict(), 'enemy_team': enemy_team_home.get_stats_dict()}},
+        'simulations_run': simulations
+    }
+
+====================
+File: textfootball\models\team.py
+====================
+# textfootball/models/team.py
+
+from textfootball import db
+# NEW: Import datetime
+from datetime import datetime
+
+class Team(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    country = db.Column(db.String(50), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    players = db.relationship('Player', backref='team', lazy=True, cascade="all, delete-orphan")
+    league = db.Column(db.String(100), nullable=True, default=None)
+    division = db.Column(db.String(50), nullable=True, default=None)
+    season = db.Column(db.Integer, nullable=True, default=None)
+
+    # NEW: Morale System - Interaction Cooldown
+    # The 'why': Prevents the manager from spamming team meetings.
+    last_meeting_date = db.Column(db.DateTime, nullable=True, default=None)
+
+    @property
+    def average_morale(self):
+        """ Calculates the current average morale of the squad. """
+        if not self.players:
+            return 75 # Default baseline if no players exist
+        return sum(player.morale for player in self.players) / len(self.players)
+
+    def get_morale_description(self):
+        """ Returns a qualitative description of the team's mental state. """
+        avg = self.average_morale
+        if avg >= 95:
+            return "Ecstatic"
+        elif avg >= 85:
+            return "Confident"
+        elif avg >= 75:
+            return "Good"
+        elif avg >= 60:
+            return "Stable"
+        elif avg >= 45:
+            return "Low"
+        elif avg >= 30:
+            return "Very Low"
+        else:
+            return "Crisis"
+
+====================
+File: textfootball\templates\create_team.html
+====================
+<!-- app/templates/create_team.html (unchanged) -->
+{% extends "base.html" %}
+{% block title %}Create Team{% endblock %}
+{% block content %}
+<div class="row justify-content-center align-items-center" style="min-height: 70vh;">
+    <div class="col-md-6 col-lg-5">
+       
+        <div class="card shadow-lg">
+            <div class="card-body p-5">
+                <h2 class="card-title text-center mb-4">Found Your Club</h2>
+               
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Team Name</label>
+                        <input type="text" class="form-control form-control-lg" id="name" name="name" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="country" class="form-label">Country</label>
+                        <select class="form-select form-select-lg" id="country" name="country" required>
+                            <option value="Sweden">Sweden</option>
+                            <option value="England">England</option>
+                            <option value="Germany">Germany</option>
+                            <option value="Spain">Spain</option>
+                            <option value="Italy">Italy</option>
+                        </select>
+                    </div>
+                   
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">Create Team</button>
+                    </div>
+                </form>
+                {% with messages = get_flashed_messages() %}
+                    {% if messages %}
+                        <div class="alert alert-danger mt-4" role="alert">
+                            {{ messages[0] }}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+====================
+File: textfootball\templates\match_result.html
+====================
+{% extends "base.html" %}
+{% block title %}Match Results{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Match Results</h1>
+    </div>
+    <div class="card-body">
+        <div class="accordion" id="simAccordion">
+            {% for result in results %}
+            {% set idx = loop.index0 %}
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="heading{{ idx }}">
+                    <button class="accordion-button {% if idx > 0 %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ idx }}" aria-expanded="{% if idx == 0 %}true{% else %}false{% endif %}" aria-controls="collapse{{ idx }}">
+                        Sim {{ loop.index }}: {{ result.team_a_name }} (H) {{ result.score_a }} - {{ result.score_b }} {{ result.team_b_name }} (A)
+                    </button>
+                </h2>
+                <div id="collapse{{ idx }}" class="accordion-collapse collapse {% if idx == 0 %}show{% endif %}" aria-labelledby="heading{{ idx }}" data-bs-parent="#simAccordion">
+                    <div class="accordion-body">
+                        <div id="match-log-{{ idx }}" class="match-timeline">
+                            <!-- Log entries will be inserted here by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Styles for the live timeline visualization */
+    .match-timeline {
+        font-family: monospace;
+        white-space: pre-wrap; /* Respects newlines in summaries */
+        max-height: 500px;
+        overflow-y: auto;
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+    }
+    .log-entry {
+        margin-bottom: 8px; /* Increased margin for better separation */
+        padding: 4px 8px;
+        display: flex;
+        align-items: flex-start;
+        /* Transition for smooth appearance */
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    .log-entry.visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    .log-minute {
+        font-weight: bold;
+        margin-right: 15px;
+        color: #0d6efd; /* Bootstrap's primary blue */
+        white-space: nowrap;
+        min-width: 40px;
+    }
+    .log-content {
+        flex-grow: 1; /* Allow content to take remaining space */
+    }
+    .log-details {
+        font-size: 0.85em;
+        color: #6c757d; /* Bootstrap's text-muted */
+        margin-top: 5px;
+        padding-left: 10px;
+        border-left: 2px solid #dee2e6; /* Bootstrap's border-color */
+        font-style: italic;
+        white-space: pre-wrap; /* Respects newlines in details string */
+        line-height: 1.4; /* Improve readability of multi-line details */
+    }
+
+    /* Importance Styling */
+    .importance-goal {
+        color: #155724;
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+        font-weight: bold;
+        animation: highlight-animation 1.5s ease;
+    }
+    .importance-save {
+        color: #004085;
+        background-color: #cce5ff;
+        border-left: 4px solid #007bff;
+        font-weight: bold;
+    }
+    .importance-miss {
+        color: #721c24;
+        background-color: #f8d7da;
+    }
+    .importance-info, .importance-error {
+        background-color: #e9ecef;
+        font-style: italic;
+        padding: 10px;
+        margin-bottom: 15px;
+        border-left: 3px solid #6c757d;
+    }
+     .importance-error {
+        background-color: #f8d7da;
+        border-left-color: #dc3545;
+        color: #721c24;
+     }
+    .importance-final {
+        font-weight: bold;
+        font-size: 1.2em;
+        border-top: 2px solid #000;
+        padding-top: 10px;
+        margin-top: 15px;
+        text-align: center;
+    }
+
+    @keyframes highlight-animation {
+        0% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+</style>
+
+<script>
+    // The structure of logs is now: [[{'minute': 0, 'message': '...', 'importance': '...', 'details': '...'}, ...], ...]
+    const logs = {{ results | map(attribute='log') | list | tojson }};
+
+    // This loop now starts ALL simulations as soon as the page loads.
+    {% for result in results %}
+    {% set idx = loop.index0 %}
+    const logData{{ idx }} = logs[{{ idx }}] || [];
+    const logDiv{{ idx }} = document.getElementById('match-log-{{ idx }}');
+    let i{{ idx }} = 0;
+    let isRunning{{ idx }} = false;
+
+    function showNext{{ idx }}() {
+        if (i{{ idx }} < logData{{ idx }}.length) {
+            const entry = logData{{ idx }}[i{{ idx }}];
+            const entryDiv = document.createElement('div');
+            entryDiv.classList.add('log-entry');
+            entryDiv.classList.add('importance-' + entry.importance);
+
+            if (!['info', 'final', 'error'].includes(entry.importance) && entry.minute > 0) {
+                const minuteSpan = document.createElement('span');
+                minuteSpan.classList.add('log-minute');
+                minuteSpan.textContent = `[${entry.minute}']`;
+                entryDiv.appendChild(minuteSpan);
+            }
+
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('log-content');
+
+            const messageSpan = document.createElement('span');
+            messageSpan.textContent = entry.message;
+            contentDiv.appendChild(messageSpan);
+
+            if (entry.details && entry.details.trim() !== '') {
+                const detailsDiv = document.createElement('div');
+                detailsDiv.classList.add('log-details');
+                detailsDiv.textContent = entry.details;
+                contentDiv.appendChild(detailsDiv);
+            }
+
+            entryDiv.appendChild(contentDiv);
+            logDiv{{ idx }}.appendChild(entryDiv);
+
+            setTimeout(() => entryDiv.classList.add('visible'), 10);
+            logDiv{{ idx }}.scrollTop = logDiv{{ idx }}.scrollHeight;
+            i{{ idx }}++;
+
+            let timeout = 500;
+            if (entry.importance === 'goal') timeout = 2500;
+            else if (entry.importance === 'info' || entry.importance === 'final') timeout = 1000;
+            else if (entry.event_type === 'SHOT_OPPORTUNITY' || entry.importance === 'save') timeout = 1500;
+
+            setTimeout(showNext{{ idx }}, timeout);
+        }
+    }
+
+    // *** MODIFIED LOGIC ***
+    // Automatically start the simulation display function for this specific loop index.
+    // This will fire for all simulations concurrently on page load.
+    if (!isRunning{{ idx }}) {
+        isRunning{{ idx }} = true;
+        // Add a slight, staggered delay to the start of each simulation
+        // so they don't all fire on the exact same millisecond.
+        setTimeout(() => showNext{{ idx }}(), {{ idx }} * 100);
+    }
+    {% endfor %}
+</script>
+{% endblock %}
+====================
+File: textfootball\templates\simulate.html
+====================
+{% extends "base.html" %}
+{% block title %}Simulate Enemies{% endblock %}
+
+{% macro tale_of_the_tape(fixture_stats) %}
+<table class="table table-sm table-bordered text-center small mb-2">
+    <thead class="table-light">
+        <tr>
+            <th scope="col" style="width: 25%;">Metric</th>
+            <th scope="col" class="{{ 'table-info' if fixture_stats.user_team.is_home }}">
+                {{ fixture_stats.user_team.name }} {% if fixture_stats.user_team.is_home %}(H){% endif %}
+            </th>
+            <th scope="col" class="{{ 'table-info' if fixture_stats.enemy_team.is_home }}">
+                {{ fixture_stats.enemy_team.name }} {% if fixture_stats.enemy_team.is_home %}(H){% endif %}
+            </th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <th scope="row">Avg. Base Skill</th>
+            <td>{{ fixture_stats.user_team.avg_base_skill|round(1) }}</td>
+            <td>{{ fixture_stats.enemy_team.avg_base_skill|round(1) }}</td>
+        </tr>
+        <tr>
+            <th scope="row">Avg. Team Shape</th>
+            <td>{{ fixture_stats.user_team.avg_shape|round(1) }}%</td>
+            <td>{{ fixture_stats.enemy_team.avg_shape|round(1) }}%</td>
+        </tr>
+        <tr class="fw-bold">
+            <th scope="row">Avg. Effective Skill</th>
+            <td>{{ fixture_stats.user_team.avg_effective_skill|round(1) }}</td>
+            <td>{{ fixture_stats.enemy_team.avg_effective_skill|round(1) }}</td>
+        </tr>
+        {% for pos_key, pos_name in [('GOALKEEPER', 'GK'), ('DEFENDER', 'DEF'), ('MIDFIELDER', 'MID'), ('FORWARD', 'FWD')] %}
+        <tr>
+            <th scope="row">{{ pos_name }} Strength</th>
+            <td>
+                {% if fixture_stats.user_team.is_home %}
+                    {{ fixture_stats.user_team.base_zonal_strength[pos_key]|round(1) }} → <strong>{{ fixture_stats.user_team.zonal_strength[pos_key]|round(1) }}</strong>
+                {% else %}
+                    {{ fixture_stats.user_team.zonal_strength[pos_key]|round(1) }}
+                {% endif %}
+            </td>
+            <td>
+                {% if fixture_stats.enemy_team.is_home %}
+                    {{ fixture_stats.enemy_team.base_zonal_strength[pos_key]|round(1) }} → <strong>{{ fixture_stats.enemy_team.zonal_strength[pos_key]|round(1) }}</strong>
+                {% else %}
+                    {{ fixture_stats.enemy_team.zonal_strength[pos_key]|round(1) }}
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endmacro %}
+
+
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Available Enemy Teams</h1>
+    </div>
+    <div class="card-body">
+        {% if not has_selected_team %}
+        <div class="alert alert-warning" role="alert">
+            Please select one of your teams from the <a href="{{ url_for('game.dashboard') }}" class="alert-link">Dashboard</a> to see match predictions and issue challenges.
+        </div>
+        {% else %}
+        <div class="alert alert-info small">
+            <h6 class="alert-heading mb-1">How to Read the Analysis</h6>
+            The tables below show team stats for each fixture. For the team playing at home (H), you will see their zonal strength calculation: `Base Strength → <strong>Boosted Strength</strong>`.
+        </div>
+        {% endif %}
+
+        <ul class="list-group mt-3">
+            {% for enemy in enemies %}
+            <li class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div><h5 class="mb-1">{{ enemy.team.name }} ({{ enemy.team.country }})</h5></div>
+                    {% if has_selected_team %}
+                    <!-- MODIFIED: Form now includes the number of sims input again -->
+                    <form method="POST" action="{{ url_for('game.challenge_team', team_id=enemy.team.id) }}">
+                        <div class="input-group input-group-sm">
+                            <input type="number" name="num_sims" class="form-control" min="1" max="10" value="1" title="Number of matches to simulate">
+                            <button type="submit" class="btn btn-primary btn-sm">Challenge</button>
+                        </div>
+                    </form>
+                    {% endif %}
+                </div>
+
+                {% if enemy.odds and not enemy.odds.error %}
+                <div class="mt-2">
+                    <ul class="nav nav-pills nav-fill nav-sm mb-2" id="pills-tab-{{ loop.index }}" role="tablist">
+                        <li class="nav-item" role="presentation"><button class="nav-link active" id="pills-home-tab-{{ loop.index }}" data-bs-toggle="pill" data-bs-target="#pills-home-{{ loop.index }}" type="button" role="tab">Home Fixture</button></li>
+                        <li class="nav-item" role="presentation"><button class="nav-link" id="pills-away-tab-{{ loop.index }}" data-bs-toggle="pill" data-bs-target="#pills-away-{{ loop.index }}" type="button" role="tab">Away Fixture</button></li>
+                    </ul>
+
+                    <div class="tab-content" id="pills-tabContent-{{ loop.index }}">
+                        <div class="tab-pane fade show active p-2 border rounded" id="pills-home-{{ loop.index }}" role="tabpanel">
+                            {{ tale_of_the_tape(enemy.odds.home_fixture.stats) }}
+                            <div class="progress" style="height: 20px; font-size: 0.75rem; font-weight: bold;">
+                                <div class="progress-bar bg-success" style="width: {{ enemy.odds.home_fixture.probs.win_prob }}%"><span>{{ enemy.odds.home_fixture.probs.win_prob|round(1) }}%</span></div>
+                                <div class="progress-bar bg-warning text-dark" style="width: {{ enemy.odds.home_fixture.probs.draw_prob }}%"><span>{{ enemy.odds.home_fixture.probs.draw_prob|round(1) }}%</span></div>
+                                <div class="progress-bar bg-danger" style="width: {{ enemy.odds.home_fixture.probs.loss_prob }}%"><span>{{ enemy.odds.home_fixture.probs.loss_prob|round(1) }}%</span></div>
+                            </div>
+                            <!-- MODIFIED: Added clear legend -->
+                            <div class="d-flex justify-content-between small mt-1">
+                                <span class="text-success">■ {{ enemy.odds.home_fixture.stats.user_team.name }} Win</span>
+                                <span class="text-warning">■ Draw</span>
+                                <span class="text-danger">■ {{ enemy.odds.home_fixture.stats.enemy_team.name }} Win</span>
+                            </div>
+                            <p class="small mt-2 text-center mb-0">Avg Goals: <strong>{{ enemy.odds.home_fixture.probs.avg_goals_for|round(2) }}</strong> - <strong>{{ enemy.odds.home_fixture.probs.avg_goals_against|round(2) }}</strong></p>
+                        </div>
+                        <div class="tab-pane fade p-2 border rounded" id="pills-away-{{ loop.index }}" role="tabpanel">
+                            {{ tale_of_the_tape(enemy.odds.away_fixture.stats) }}
+                            <div class="progress" style="height: 20px; font-size: 0.75rem; font-weight: bold;">
+                                <div class="progress-bar bg-success" style="width: {{ enemy.odds.away_fixture.probs.loss_prob }}%"><span>{{ enemy.odds.away_fixture.probs.loss_prob|round(1) }}%</span></div>
+                                <div class="progress-bar bg-warning text-dark" style="width: {{ enemy.odds.away_fixture.probs.draw_prob }}%"><span>{{ enemy.odds.away_fixture.probs.draw_prob|round(1) }}%</span></div>
+                                <div class="progress-bar bg-danger" style="width: {{ enemy.odds.away_fixture.probs.win_prob }}%"><span>{{ enemy.odds.away_fixture.probs.win_prob|round(1) }}%</span></div>
+                            </div>
+                             <!-- MODIFIED: Added clear legend -->
+                            <div class="d-flex justify-content-between small mt-1">
+                                <span class="text-success">■ {{ enemy.odds.away_fixture.stats.user_team.name }} Win</span>
+                                <span class="text-warning">■ Draw</span>
+                                <span class="text-danger">■ {{ enemy.odds.away_fixture.stats.enemy_team.name }} Win</span>
+                            </div>
+                             <p class="small mt-2 text-center mb-0">Avg Goals: <strong>{{ enemy.odds.away_fixture.probs.avg_goals_against|round(2) }}</strong> - <strong>{{ enemy.odds.away_fixture.probs.avg_goals_for|round(2) }}</strong></p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </li>
+            {% else %}
+            <li class="list-group-item">No enemy teams available.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

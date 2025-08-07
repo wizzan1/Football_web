@@ -1,5 +1,3 @@
-# textfootball/blueprints/game/routes.py
-
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
 from textfootball import db
 # MODIFIED: Add Personality to the model imports
@@ -36,7 +34,7 @@ def _generate_starter_squad(team):
         current_pos = positions[i]
 
         # Free Kick ability: Correlated with skill but with high variance
-        fk_ability = 50  # Fixed to 50 (default) for balancing, as per request; keep even to manually adjust parameters
+        fk_ability = 50 # Fixed to 50 (default) for balancing, as per request; keep even to manually adjust parameters
 
         # NEW: Penalty Taking: Similar correlation to FK ability, representing composure.
         pen_taking = max(10, min(99, skill + random.randint(-20, 20)))
@@ -119,11 +117,16 @@ def create_team():
     if request.method == 'POST':
         team_name = request.form.get('name')
         country = request.form.get('country')
+        # NEW: 1.2. Team Color Integration - Get color from form
+        color = request.form.get('color', '#3498db') # Default color if missing
+
         existing_team = Team.query.filter_by(name=team_name).first()
         if existing_team:
             flash('That team name is already taken.', "danger")
             return redirect(url_for('game.create_team'))
-        new_team = Team(name=team_name, country=country, user_id=user.id)
+        
+        # NEW: 1.2. Team Color Integration - Add color to Team creation
+        new_team = Team(name=team_name, country=country, color=color, user_id=user.id)
         db.session.add(new_team)
         db.session.commit()
         # This function now generates penalty skills
@@ -308,8 +311,6 @@ def simulate():
         enemies.append({'team': team, 'odds': odds})
     return render_template('simulate.html', enemies=enemies, has_selected_team=(user_team_id is not None))
 
-# textfootball/blueprints/game/routes.py
-
 @game_bp.route('/workbench')
 def workbench():
     if 'username' not in session:
@@ -364,8 +365,6 @@ def workbench():
                            all_other_teams=all_other_teams,
                            # NEW: Pass the dictionary to the template
                            default_morale_params=default_morale_params)
-
-# textfootball/blueprints/game/routes.py
 
 @game_bp.route('/recalculate_odds', methods=['POST'])
 def recalculate_odds():
@@ -430,12 +429,6 @@ def recalculate_odds():
     db.session.expunge_all()
     return jsonify(odds)
 
-# textfootball/blueprints/game/routes.py
-
-# textfootball/blueprints/game/routes.py
-
-# Add this new function anywhere in the file after the other routes.
-
 @game_bp.route('/analyze_morale_settings', methods=['POST'])
 def analyze_morale_settings():
     """
@@ -499,7 +492,6 @@ def analyze_morale_settings():
     db.session.expunge_all()
 
     return jsonify({'analysis_results': results_over_morale})
-
 
 @game_bp.route('/batch_odds', methods=['POST'])
 def batch_odds():
@@ -572,8 +564,8 @@ def batch_odds():
         )
         sims_per_run = res.get('simulations_run', sims_per_run)
 
-        hf = res['home_fixture']['probs']  # user at home
-        af = res['away_fixture']['probs']  # enemy at home
+        hf = res['home_fixture']['probs'] # user at home
+        af = res['away_fixture']['probs'] # enemy at home
 
         # User perspective (home)
         user_home_acc['win_prob'].append(float(hf['win_prob']))

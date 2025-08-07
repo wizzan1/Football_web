@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Match Results{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Match Results</h1>
+    </div>
+    <div class="card-body">
+        <div class="accordion" id="simAccordion">
+            {% for result in results %}
+            {% set idx = loop.index0 %}
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="heading{{ idx }}">
+                    <button class="accordion-button {% if idx > 0 %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ idx }}" aria-expanded="{% if idx == 0 %}true{% else %}false{% endif %}" aria-controls="collapse{{ idx }}">
+                        Sim {{ loop.index }}: {{ result.team_a_name }} (H) {{ result.score_a }} - {{ result.score_b }} {{ result.team_b_name }} (A)
+                    </button>
+                </h2>
+                <div id="collapse{{ idx }}" class="accordion-collapse collapse {% if idx == 0 %}show{% endif %}" aria-labelledby="heading{{ idx }}" data-bs-parent="#simAccordion">
+                    <div class="accordion-body">
+                        <div id="match-log-{{ idx }}" class="match-timeline">
+                            <!-- Log entries will be inserted here by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Styles for the live timeline visualization */
+    .match-timeline {
+        font-family: monospace;
+        white-space: pre-wrap; /* Respects newlines in summaries */
+        max-height: 500px;
+        overflow-y: auto;
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+    }
+    .log-entry {
+        margin-bottom: 8px; /* Increased margin for better separation */
+        padding: 4px 8px;
+        display: flex;
+        align-items: flex-start;
+        /* Transition for smooth appearance */
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    .log-entry.visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    .log-minute {
+        font-weight: bold;
+        margin-right: 15px;
+        color: #0d6efd; /* Bootstrap's primary blue */
+        white-space: nowrap;
+        min-width: 40px;
+    }
+    .log-content {
+        flex-grow: 1; /* Allow content to take remaining space */
+    }
+    .log-details {
+        font-size: 0.85em;
+        color: #6c757d; /* Bootstrap's text-muted */
+        margin-top: 5px;
+        padding-left: 10px;
+        border-left: 2px solid #dee2e6; /* Bootstrap's border-color */
+        font-style: italic;
+        white-space: pre-wrap; /* Respects newlines in details string */
+        line-height: 1.4; /* Improve readability of multi-line details */
+    }
+
+    /* Importance Styling */
+    .importance-goal {
+        color: #155724;
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+        font-weight: bold;
+        animation: highlight-animation 1.5s ease;
+    }
+    .importance-save {
+        color: #004085;
+        background-color: #cce5ff;
+        border-left: 4px solid #007bff;
+        font-weight: bold;
+    }
+    .importance-miss {
+        color: #721c24;
+        background-color: #f8d7da;
+    }
+    .importance-info, .importance-error {
+        background-color: #e9ecef;
+        font-style: italic;
+        padding: 10px;
+        margin-bottom: 15px;
+        border-left: 3px solid #6c757d;
+    }
+     .importance-error {
+        background-color: #f8d7da;
+        border-left-color: #dc3545;
+        color: #721c24;
+     }
+    .importance-final {
+        font-weight: bold;
+        font-size: 1.2em;
+        border-top: 2px solid #000;
+        padding-top: 10px;
+        margin-top: 15px;
+        text-align: center;
+    }
+
+    @keyframes highlight-animation {
+        0% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+</style>
+
+<script>
+    // The structure of logs is now: [[{'minute': 0, 'message': '...', 'importance': '...', 'details': '...'}, ...], ...]
+    const logs = {{ results | map(attribute='log') | list | tojson }};
+
+    // This loop now starts ALL simulations as soon as the page loads.
+    {% for result in results %}
+    {% set idx = loop.index0 %}
+    const logData{{ idx }} = logs[{{ idx }}] || [];
+    const logDiv{{ idx }} = document.getElementById('match-log-{{ idx }}');
+    let i{{ idx }} = 0;
+    let isRunning{{ idx }} = false;
+
+    function showNext{{ idx }}() {
+        if (i{{ idx }} < logData{{ idx }}.length) {
+            const entry = logData{{ idx }}[i{{ idx }}];
+            const entryDiv = document.createElement('div');
+            entryDiv.classList.add('log-entry');
+            entryDiv.classList.add('importance-' + entry.importance);
+
+            if (!['info', 'final', 'error'].includes(entry.importance) && entry.minute > 0) {
+                const minuteSpan = document.createElement('span');
+                minuteSpan.classList.add('log-minute');
+                minuteSpan.textContent = `[${entry.minute}']`;
+                entryDiv.appendChild(minuteSpan);
+            }
+
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('log-content');
+
+            const messageSpan = document.createElement('span');
+            messageSpan.textContent = entry.message;
+            contentDiv.appendChild(messageSpan);
+
+            if (entry.details && entry.details.trim() !== '') {
+                const detailsDiv = document.createElement('div');
+                detailsDiv.classList.add('log-details');
+                detailsDiv.textContent = entry.details;
+                contentDiv.appendChild(detailsDiv);
+            }
+
+            entryDiv.appendChild(contentDiv);
+            logDiv{{ idx }}.appendChild(entryDiv);
+
+            setTimeout(() => entryDiv.classList.add('visible'), 10);
+            logDiv{{ idx }}.scrollTop = logDiv{{ idx }}.scrollHeight;
+            i{{ idx }}++;
+
+            let timeout = 500;
+            if (entry.importance === 'goal') timeout = 2500;
+            else if (entry.importance === 'info' || entry.importance === 'final') timeout = 1000;
+            else if (entry.event_type === 'SHOT_OPPORTUNITY' || entry.importance === 'save') timeout = 1500;
+
+            setTimeout(showNext{{ idx }}, timeout);
+        }
+    }
+
+    // *** MODIFIED LOGIC ***
+    // Automatically start the simulation display function for this specific loop index.
+    // This will fire for all simulations concurrently on page load.
+    if (!isRunning{{ idx }}) {
+        isRunning{{ idx }} = true;
+        // Add a slight, staggered delay to the start of each simulation
+        // so they don't all fire on the exact same millisecond.
+        setTimeout(() => showNext{{ idx }}(), {{ idx }} * 100);
+    }
+    {% endfor %}
+</script>
+{% endblock %}
