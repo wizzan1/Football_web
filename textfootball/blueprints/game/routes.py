@@ -36,11 +36,11 @@ def _generate_starter_squad(team):
         current_pos = positions[i]
 
         # Free Kick ability: Correlated with skill but with high variance
-        fk_ability = max(10, min(99, skill + random.randint(-15, 30)))
-        
+        fk_ability = 50  # Fixed to 50 (default) for balancing, as per request; keep even to manually adjust parameters
+
         # NEW: Penalty Taking: Similar correlation to FK ability, representing composure.
         pen_taking = max(10, min(99, skill + random.randint(-20, 20)))
-        
+
         # NEW: Penalty Saving: Highly dependent on position. Goalkeepers are specialized.
         if current_pos == Position.GOALKEEPER:
             # Goalkeepers are naturally good at this
@@ -58,7 +58,8 @@ def _generate_starter_squad(team):
             penalty_taking=pen_taking,
             penalty_saving=pen_saving,
             potential=random.randint(60, 95),
-            shape=random.randint(70, 100),
+            shape=100,
+            morale=100,
             shirt_number=available_numbers.pop(),
             team_id=team.id
         )
@@ -194,7 +195,7 @@ def challenge_team(team_id):
 
     num_sims = int(request.form.get('num_sims', 1))
     num_sims = max(1, min(num_sims, 10))
-    
+
     # NEW: Check if the match is a 'knockout' type from the form.
     # The 'why': This allows the user to trigger matches that require a winner,
     # enabling cup competitions or high-stakes single matches.
@@ -205,7 +206,7 @@ def challenge_team(team_id):
         # NEW: The is_knockout flag is passed to the simulation engine.
         sim_result = simulate_match(challenger_team.id, challenged_team.id, is_knockout=is_knockout)
         results.append(sim_result)
-        
+
     # The user must update match_result.html to display shootout scores if they exist.
     # Passing is_knockout to the template can help with conditional rendering.
     return render_template('match_result.html', results=results, is_knockout=is_knockout)
@@ -384,7 +385,7 @@ def recalculate_odds():
     enemy_team_model = Team.query.get(data.get('enemy_team_id'))
     if not user_team_model or not enemy_team_model:
         return jsonify({'error': 'Invalid team ID provided'}), 404
-        
+
     # NEW: Get the workbench's morale parameters from the request
     morale_params_from_request = data.get('morale_params', {})
 
@@ -417,7 +418,7 @@ def recalculate_odds():
                     pass # Ignore if personality is invalid
 
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
-    
+
     # MODIFIED: Pass the morale parameters from the request into the odds calculation
     odds = get_prematch_odds(
         user_team_model=user_team_model,
@@ -464,11 +465,11 @@ def analyze_morale_settings():
     morale_start = int(analysis_params.get('start', 10))
     morale_end = int(analysis_params.get('end', 100))
     morale_step = int(analysis_params.get('step', 10))
-    
+
     # Get other necessary data from the request
     morale_params_from_request = data.get('morale_params', {})
     fixed_lineup_ids = session.get('workbench_fixed_lineup_ids')
-    
+
     results_over_morale = []
 
     # Loop through the specified morale range
@@ -536,7 +537,7 @@ def batch_odds():
             'penalty_taking': int(p.get('penalty_taking', 50))
         } for p in data['user_team_players']
     }
-    
+
     # MODIFIED: Apply all temporary changes from the workbench to the in-memory player objects
     for player in user_team_model.players:
         if player.id in modified_stats:
@@ -623,5 +624,3 @@ def batch_odds():
             'away': summarize(enemy_away_acc)
         }
     })
-
-

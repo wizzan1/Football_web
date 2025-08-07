@@ -21,6 +21,11 @@ class Personality(enum.Enum):
     STOIC = "Stoic"               # Smaller swings in both directions. Resilient.
     VOLATILE = "Volatile"         # Large swings in both directions. High risk/reward.
 
+# NEW: Temporary flag to disable morale effects for balancing purposes.
+# Set to 0 to ignore morale in effective_skill calculations.
+# Change to 1 to enable morale impact.
+MORALE_EFFECT_ACTIVE = 0
+
 class Player(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -28,10 +33,10 @@ class Player(db.Model):
     position = db.Column(db.Enum(Position), nullable=False)
     skill = db.Column(db.Integer, nullable=False)
     free_kick_ability = db.Column(db.Integer, nullable=False, default=50)
-    
+
     penalty_taking = db.Column(db.Integer, nullable=False, default=50)
     penalty_saving = db.Column(db.Integer, nullable=False, default=50)
-    
+
     potential = db.Column(db.Integer, nullable=False)
     shape = db.Column(db.Integer, nullable=False)
     shirt_number = db.Column(db.Integer, nullable=False)
@@ -44,11 +49,11 @@ class Player(db.Model):
     personality = db.Column(db.Enum(Personality), nullable=False, default=Personality.PROFESSIONAL)
 
     # --- Morale System Configuration ---
-    
+
     # The maximum boost/penalty applied to effective_skill due to morale.
     # A 10% swing means a player can perform 10% better or worse than their shape dictates.
     MORALE_IMPACT_FACTOR = 0.10
-    
+
     # Requirement: 100 should be neutral (1.0x multiplier).
     MORALE_NEUTRAL_POINT = 100
 
@@ -61,16 +66,19 @@ class Player(db.Model):
 
         # 2. Calculate the morale multiplier.
         # If 100 is neutral (1.0x), we only apply penalties for morale < 100.
-        
-        if self.morale >= 100:
-            morale_multiplier = 1.0
+
+        if MORALE_EFFECT_ACTIVE == 1:
+            if self.morale >= 100:
+                morale_multiplier = 1.0
+            else:
+                # Calculate the penalty. If Morale=0, penalty is max (e.g., -10%). If Morale=100, penalty is 0%.
+                # Penalty = (100 - Morale) / 100 * MAX_PENALTY
+                penalty = ((100 - self.morale) / 100.0) * self.MORALE_IMPACT_FACTOR
+                morale_multiplier = 1.0 - penalty
+
+                # Example: Morale 50. Penalty = (100-50)/100 * 0.10 = 0.05. Multiplier = 0.95.
         else:
-            # Calculate the penalty. If Morale=0, penalty is max (e.g., -10%). If Morale=100, penalty is 0%.
-            # Penalty = (100 - Morale) / 100 * MAX_PENALTY
-            penalty = ((100 - self.morale) / 100.0) * self.MORALE_IMPACT_FACTOR
-            morale_multiplier = 1.0 - penalty
-            
-            # Example: Morale 50. Penalty = (100-50)/100 * 0.10 = 0.05. Multiplier = 0.95.
+            morale_multiplier = 1.0  # Morale effect disabled for balancing
 
         return base_effectiveness * morale_multiplier
 

@@ -1,4 +1,4 @@
-# C:\Users\tobia\Desktop\Vampire Game\my_football_game\HTML\config.py
+## C:\Users\tobia\Desktop\Vampire Game\my_football_game\HTML\config.py
 
 import os
 
@@ -15,7 +15,7 @@ class Config:
 class DevelopmentConfig(Config):
     """Configuration for development."""
     DEBUG = True
-    
+
     # This is the crucial line that connects to your database in its new location.
     # It builds the path: 'sqlite:///C:\...\my_football_game\HTML\instance\database.db'
     SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL') or \

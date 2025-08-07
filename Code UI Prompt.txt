@@ -1,0 +1,84 @@
+Prompt: Two World-Class GUI AI Coding Assistants (Google Gemini & xAI Grok Editions)
+You are a world-class senior software architect specializing in creating intuitive, professional-grade desktop applications and integrating with advanced AI models. Your task is to write the complete Python code for two separate, single-file applications:
+
+gemini_assistant_app.py: To interface with Google's Gemini API.
+
+xai_grok_assistant_app.py: To interface with xAI's Grok API.
+
+Both applications must be functionally identical in their core workflow, UI structure, and features, with the only differences being their specific API integration and model selection logic. The final products must be robust, user-friendly, and feature a non-freezing, responsive UI designed for a beginner user.
+
+Part I: The Graphical User Interface (GUI)
+This specification applies to both applications unless otherwise noted.
+
+Technology: Use the customtkinter library.
+
+User-Friendliness: The UI must be self-explanatory with clear labels, helpful tooltips, and a persistent "How to Use" text block.
+
+Layout: A three-pane layout:
+
+Left Pane (Controls & Status):
+
+A Dropdown menu to select the AI Model.
+
+For gemini_assistant_app.py: This dropdown must be dynamically populated on startup by fetching the list of available models directly from the Google AI API.
+
+For xai_grok_assistant_app.py: This dropdown can be populated from a static, easily configurable list at the top of the script (e.g., ['grok-4-latest', 'grok-1.5']).
+
+A "Select Project Folder" button and a "Select Output Folder" button, each with a display for the selected path.
+
+A checkbox toggle: [ ] Return full file content.
+
+The main "Generate Code" button.
+
+A Real-Time Log Panel for live status updates.
+
+Top-Right Pane (User Input & Summary): A tabbed interface with "Project Summary" and "Your Request" tabs. The summary text must be saved and reloaded.
+
+Bottom-Right Pane (AI Output & Review): Displays the AI's response, including a Changelog Section, a Code Review Section (with tabs and a Diff View toggle), and an "Open Output Folder" button.
+
+Part II: The Workflow & Core Logic
+This specification applies to both applications.
+
+Responsive UI (Multithreading): All long-running tasks must run in a background thread.
+
+Configuration & Startup:
+
+A shared config.json will store API keys, last used paths, the project summary, and the last used model name for each app.
+
+API Key Handling: On launch, if the app's specific key is missing from config.json, it must prompt the user for it.
+
+The "Two-Step AI" Process: Use the Analysis/Execution workflow where the AI first identifies necessary files before generating code.
+
+Sandbox Output: The application must not modify original project files. It must save all generated files (and only those files) to a new, unique, timestamped subfolder within the user-selected output directory.
+
+Part III: AI Behavior, Output Format, and Core Instructions
+The prompt sent to the LLM must instruct it to be a proactive architectural partner and provide a structured response containing three parts: Changelog, Updated Summary, and Code Files, each separated by unique delimiters. The AI should also be instructed to create new files/directories if it's good programming practice.
+
+When the "Return full file content" box is checked, the prompt must include the critical instruction to preserve all unmodified code perfectly, using the original file as a mandatory base.
+
+Part IV: Technical & Quality Requirements
+Language & Libraries:
+
+Shared: Python 3.10+, customtkinter, requests.
+
+gemini_assistant_app.py: This application will interface with Google's Gemini API (keys from console.ai.google.dev).
+
+It must use the google-generativeai library.
+
+On startup, it must call the API (e.g., google.generativeai.list_models()) to dynamically fetch and display all available models in the dropdown.
+
+It must remember the last used model and attempt to select it by default.
+
+xai_grok_assistant_app.py: This application will interface with xAI's Grok API, specifically targeting the grok-4-latest model.
+
+Precise API Implementation: It must use the requests library to send a POST request to https://api.x.ai/v1/chat/completions.
+
+Headers: Content-Type: application/json and Authorization: Bearer <XAI_API_KEY>.
+
+Body: The JSON body must follow the specified structure: {"model": "...", "messages": [{"role": "...", "content": "..."}], "temperature": ...}.
+
+Code Quality: World-class, senior-level code for both files (single-file, modular, PEP 8, type hints, docstrings, robust error handling).
+
+Implementation Note: Avoid using the standard .bind() method for applying tooltips to CTkSegmentedButton widgets to prevent a known NotImplementedError.
+
+Please provide the complete, single-file Python scripts for both gemini_assistant_app.py and xai_grok_assistant_app.py.
