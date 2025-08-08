@@ -21,8 +21,6 @@ MAX_TEAMS = 3
 FIRST_NAMES = ["Erik", "Lars", "Mikael", "Anders", "Johan", "Karl", "Fredrik"]
 LAST_NAMES = ["Andersson", "Johansson", "Karlsson", "Nilsson", "Eriksson", "Larsson"]
 
-STARTER_SKILL = 50
-
 def _generate_starter_squad(team):
     """
     Generates a starter squad for a new team, now including penalty-related skills.
@@ -32,7 +30,7 @@ def _generate_starter_squad(team):
     available_numbers = list(range(1, 21))
     random.shuffle(available_numbers)
     for i in range(20):
-        skill = STARTER_SKILL
+        skill = random.randint(30, 70)
         current_pos = positions[i]
 
         # Free Kick ability: Correlated with skill but with high variance
@@ -108,9 +106,6 @@ def delete_team(team_id):
         session.pop('selected_team_id')
     return redirect(url_for('game.dashboard'))
 
-def generate_random_color():
-    return f'#{random.randint(0, 0xFFFFFF):06x}'
-
 @game_bp.route('/create-team', methods=['GET', 'POST'])
 def create_team():
     if 'username' not in session:
@@ -123,13 +118,13 @@ def create_team():
         team_name = request.form.get('name')
         country = request.form.get('country')
         # NEW: 1.2. Team Color Integration - Get color from form
-        color = request.form.get('color') or generate_random_color() # Random if not provided
+        color = request.form.get('color', '#3498db') # Default color if missing
 
         existing_team = Team.query.filter_by(name=team_name).first()
         if existing_team:
             flash('That team name is already taken.', "danger")
             return redirect(url_for('game.create_team'))
-
+        
         # NEW: 1.2. Team Color Integration - Add color to Team creation
         new_team = Team(name=team_name, country=country, color=color, user_id=user.id)
         db.session.add(new_team)
@@ -562,12 +557,10 @@ def batch_odds():
     sims_per_run = None
 
     for _ in range(runs):
-        # MODIFIED: Pass the morale parameters from the request into the odds calculation
         res = get_prematch_odds(
             user_team_model=user_team_model,
             enemy_team_model=enemy_team_model,
-            fixed_user_lineup_ids=fixed_lineup_ids,
-            morale_params=morale_params_from_request
+            fixed_user_lineup_ids=fixed_lineup_ids
         )
         sims_per_run = res.get('simulations_run', sims_per_run)
 

@@ -58,89 +58,162 @@
 
 {% block content %}
 <div class="card shadow-sm">
-    <div class="card-header bg-dark text-white">
-        <h1 class="h2 mb-0">Available Enemy Teams</h1>
-    </div>
-    <div class="card-body">
-        {% if not has_selected_team %}
-        <div class="alert alert-warning" role="alert">
-            Please select one of your teams from the <a href="{{ url_for('game.dashboard') }}" class="alert-link">Dashboard</a> to see match predictions and issue challenges.
-        </div>
-        {% else %}
-        <div class="alert alert-info small">
-            <h6 class="alert-heading mb-1">How to Read the Analysis</h6>
-            The tables below show team stats for each fixture. For the team playing at home (H), you will see their zonal strength calculation: `Base Strength → <strong>Boosted Strength</strong>`.
-        </div>
-        {% endif %}
+    <div class="card-header bg-dark text-white">
+        <h1 class="h2 mb-0">Simulation Hub</h1>
+    </div>
+    <div class="card-body">
+        {% if not has_selected_team %}
+            <div class="alert alert-warning" role="alert">
+                Please select a team from the <a href="{{ url_for('game.dashboard') }}" class="alert-link">Dashboard</a> first to see match odds.
+            </div>
+        {% else %}
+            <p class="text-muted">Odds are calculated based on your currently selected team against the potential opponents below.</p>
+            <div class="list-group">
+                {% for enemy in enemies %}
+                {% set idx = loop.index0 %}
+                    <div class="list-group-item">
+                        <div class="main-row d-flex justify-content-between align-items-center">
+                            <div style="min-width: 150px;">
+                                <h5 class="mb-1">{{ enemy.team.name }}</h5>
+                                <small class="text-muted">{{ enemy.team.country }}</small>
+                            </div>
 
-        <ul class="list-group mt-3">
-            {% for enemy in enemies %}
-            <li class="list-group-item">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <!-- MODIFIED: 1.2. Team Color Integration - Show enemy team color -->
-                    <div>
-                        <span class="badge border" style="background-color: {{ enemy.team.color }};">&nbsp;&nbsp;</span>
-                        <h5 class="mb-1 d-inline">{{ enemy.team.name }} ({{ enemy.team.country }})</h5>
-                    </div>
-                    {% if has_selected_team %}
-                    <!-- MODIFIED: Form now includes the number of sims input again -->
-                    <form method="POST" action="{{ url_for('game.challenge_team', team_id=enemy.team.id) }}">
-                        <div class="input-group input-group-sm">
-                            <input type="number" name="num_sims" class="form-control" min="1" max="10" value="1" title="Number of matches to simulate">
-                            <button type="submit" class="btn btn-primary btn-sm">Challenge</button>
-                        </div>
-                    </form>
-                    {% endif %}
-                </div>
+                            {% if enemy.odds %}
+                            <div class="odds-container">
+                                <div class="progress" style="height: 25px; font-size: 0.9rem;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ enemy.odds.home_fixture.probs.win_prob }}%" title="Win">
+                                        {{ enemy.odds.home_fixture.probs.win_prob | round(0) }}%
+                                    </div>
+                                    <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ enemy.odds.home_fixture.probs.draw_prob }}%" title="Draw">
+                                        {{ enemy.odds.home_fixture.probs.draw_prob | round(0) }}%
+                                    </div>
+                                    <div class="progress-bar bg-danger" role="progressbar" style="width: {{ enemy.odds.home_fixture.probs.loss_prob }}%" title="Loss">
+                                        {{ enemy.odds.home_fixture.probs.loss_prob | round(0) }}%
+                                    </div>
+                                </div>
+                                <div class="odds-labels">
+                                    <span>WIN</span>
+                                    <span>DRAW</span>
+                                    <span>LOSS</span>
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            <div class="action-buttons">
+                                <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#details-{{ idx }}">
+                                    Details
+                                </button>
+                                <form action="{{ url_for('game.challenge_team', team_id=enemy.team.id) }}" method="post" class="challenge-form">
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" name="num_sims" class="form-control" min="1" max="10" value="1" aria-label="Number of simulations">
+                                        <button class="btn btn-primary" type="submit">Challenge</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
 
-                {% if enemy.odds and not enemy.odds.error %}
-                <div class="mt-2">
-                    <ul class="nav nav-pills nav-fill nav-sm mb-2" id="pills-tab-{{ loop.index }}" role="tablist">
-                        <li class="nav-item" role="presentation"><button class="nav-link active" id="pills-home-tab-{{ loop.index }}" data-bs-toggle="pill" data-bs-target="#pills-home-{{ loop.index }}" type="button" role="tab">Home Fixture</button></li>
-                        <li class="nav-item" role="presentation"><button class="nav-link" id="pills-away-tab-{{ loop.index }}" data-bs-toggle="pill" data-bs-target="#pills-away-{{ loop.index }}" type="button" role="tab">Away Fixture</button></li>
-                    </ul>
-
-                    <div class="tab-content" id="pills-tabContent-{{ loop.index }}">
-                        <div class="tab-pane fade show active p-2 border rounded" id="pills-home-{{ loop.index }}" role="tabpanel">
-                            {{ tale_of_the_tape(enemy.odds.home_fixture.stats) }}
-                            <!-- MODIFIED: 1.2. Team Color Integration - Use team colors for Win/Loss bars -->
-                            <div class="progress" style="height: 20px; font-size: 0.75rem; font-weight: bold;">
-                                <div class="progress-bar" style="width: {{ enemy.odds.home_fixture.probs.win_prob }}%; background-color: {{ enemy.odds.home_fixture.stats.user_team.color }};"><span>{{ enemy.odds.home_fixture.probs.win_prob|round(1) }}%</span></div>
-                                <div class="progress-bar bg-warning text-dark" style="width: {{ enemy.odds.home_fixture.probs.draw_prob }}%"><span>{{ enemy.odds.home_fixture.probs.draw_prob|round(1) }}%</span></div>
-                                <div class="progress-bar" style="width: {{ enemy.odds.home_fixture.probs.loss_prob }}%; background-color: {{ enemy.odds.home_fixture.stats.enemy_team.color }};"><span>{{ enemy.odds.home_fixture.probs.loss_prob|round(1) }}%</span></div>
-                            </div>
-                            <!-- MODIFIED: 1.2. Team Color Integration - Use team colors for legend -->
-                            <div class="d-flex justify-content-between small mt-1">
-                                <span style="color: {{ enemy.odds.home_fixture.stats.user_team.color }}; font-weight: bold;">■ {{ enemy.odds.home_fixture.stats.user_team.name }} Win</span>
-                                <span class="text-warning">■ Draw</span>
-                                <span style="color: {{ enemy.odds.home_fixture.stats.enemy_team.color }}; font-weight: bold;">■ {{ enemy.odds.home_fixture.stats.enemy_team.name }} Win</span>
-                            </div>
-                            <p class="small mt-2 text-center mb-0">Avg Goals: <strong>{{ enemy.odds.home_fixture.probs.avg_goals_for|round(2) }}</strong> - <strong>{{ enemy.odds.home_fixture.probs.avg_goals_against|round(2) }}</strong></p>
-                        </div>
-                        <div class="tab-pane fade p-2 border rounded" id="pills-away-{{ loop.index }}" role="tabpanel">
-                            {{ tale_of_the_tape(enemy.odds.away_fixture.stats) }}
-                            <!-- MODIFIED: 1.2. Team Color Integration - Use team colors for Win/Loss bars -->
-                            <div class="progress" style="height: 20px; font-size: 0.75rem; font-weight: bold;">
-                                <div class="progress-bar" style="width: {{ enemy.odds.away_fixture.probs.loss_prob }}%; background-color: {{ enemy.odds.away_fixture.stats.user_team.color }};"><span>{{ enemy.odds.away_fixture.probs.loss_prob|round(1) }}%</span></div>
-                                <div class="progress-bar bg-warning text-dark" style="width: {{ enemy.odds.away_fixture.probs.draw_prob }}%"><span>{{ enemy.odds.away_fixture.probs.draw_prob|round(1) }}%</span></div>
-                                <div class="progress-bar" style="width: {{ enemy.odds.away_fixture.probs.win_prob }}%; background-color: {{ enemy.odds.away_fixture.stats.enemy_team.color }};"><span>{{ enemy.odds.away_fixture.probs.win_prob|round(1) }}%</span></div>
-                            </div>
-                             <!-- MODIFIED: 1.2. Team Color Integration - Use team colors for legend -->
-                            <div class="d-flex justify-content-between small mt-1">
-                                <span style="color: {{ enemy.odds.away_fixture.stats.user_team.color }}; font-weight: bold;">■ {{ enemy.odds.away_fixture.stats.user_team.name }} Win</span>
-                                <span class="text-warning">■ Draw</span>
-                                <span style="color: {{ enemy.odds.away_fixture.stats.enemy_team.color }}; font-weight: bold;">■ {{ enemy.odds.away_fixture.stats.enemy_team.name }} Win</span>
-                            </div>
-                             <p class="small mt-2 text-center mb-0">Avg Goals: <strong>{{ enemy.odds.away_fixture.probs.avg_goals_against|round(2) }}</strong> - <strong>{{ enemy.odds.away_fixture.probs.avg_goals_for|round(2) }}</strong></p>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-            </li>
-            {% else %}
-            <li class="list-group-item">No enemy teams available.</li>
-            {% endfor %}
-        </ul>
-    </div>
+                        {% if enemy.odds %}
+                        {% set user_stats = enemy.odds.home_fixture.stats.user_team %}
+                        {% set enemy_stats = enemy.odds.home_fixture.stats.enemy_team %}
+                        <div class="collapse" id="details-{{ idx }}">
+                            <div class="details-container">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6 class="text-center" style="color: {{ user_stats.color }};">{{ user_stats.name }} (Your Team)</h6>
+                                        <ul class="list-unstyled">
+                                            <li><strong>Avg. Effective Skill:</strong> <span class="stat-value">{{ user_stats.avg_effective_skill | round(1) }}</span></li>
+                                            <li class="stat-breakdown">Avg. Skill: {{ user_stats.avg_base_skill | round(1) }} | Shape: {{ user_stats.avg_shape | round(1) }} | Morale: {{ user_stats.avg_morale | round(1) }}</li>
+                                            <hr>
+                                            <li><strong>GK Strength:</strong> <span class="stat-value">{{ user_stats.zonal_strength.GOALKEEPER | round(1) }}</span></li>
+                                            <li><strong>DEF Strength:</strong> <span class="stat-value">{{ user_stats.zonal_strength.DEFENDER | round(1) }}</span></li>
+                                            <li><strong>MID Strength:</strong> <span class="stat-value">{{ user_stats.zonal_strength.MIDFIELDER | round(1) }}</span></li>
+                                            <li><strong>FWD Strength:</strong> <span class="stat-value">{{ user_stats.zonal_strength.FORWARD | round(1) }}</span></li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="text-center" style="color: {{ enemy_stats.color }};">{{ enemy_stats.name }} (Opponent)</h6>
+                                        <ul class="list-unstyled">
+                                            <li><strong>Avg. Effective Skill:</strong> <span class="stat-value">{{ enemy_stats.avg_effective_skill | round(1) }}</span></li>
+                                            <li class="stat-breakdown">Avg. Skill: {{ enemy_stats.avg_base_skill | round(1) }} | Shape: {{ enemy_stats.avg_shape | round(1) }} | Morale: {{ enemy_stats.avg_morale | round(1) }}</li>
+                                            <hr>
+                                            <li><strong>GK Strength:</strong> <span class="stat-value">{{ enemy_stats.zonal_strength.GOALKEEPER | round(1) }}</span></li>
+                                            <li><strong>DEF Strength:</strong> <span class="stat-value">{{ enemy_stats.zonal_strength.DEFENDER | round(1) }}</span></li>
+                                            <li><strong>MID Strength:</strong> <span class="stat-value">{{ enemy_stats.zonal_strength.MIDFIELDER | round(1) }}</span></li>
+                                            <li><strong>FWD Strength:</strong> <span class="stat-value">{{ enemy_stats.zonal_strength.FORWARD | round(1) }}</span></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <p>No other teams exist to challenge yet.</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
 </div>
+
+<style>
+    .odds-container {
+        flex-grow: 1;
+        margin: 0 1rem;
+        min-width: 200px;
+    }
+    .progress-bar {
+        color: white;
+        font-weight: 600;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .odds-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.7rem;
+        font-weight: bold;
+        margin-top: 4px;
+        padding: 0 5px;
+        color: #6c757d;
+    }
+    .action-buttons {
+        display: flex;
+        align-items: center; /* Vertically align items */
+        gap: 0.5rem;
+    }
+    /* NEW: Ensure the challenge form fits well */
+    .challenge-form .input-group {
+        width: 150px; /* Give the form a set width */
+    }
+
+    .details-container {
+        padding: 1rem;
+        margin-top: 1rem;
+        background-color: #f8f9fa;
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+    }
+    .details-container h6 {
+        font-weight: bold;
+        border-bottom: 2px solid;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .details-container ul li {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+    }
+    .stat-value {
+        font-weight: bold;
+    }
+    .stat-breakdown {
+        font-size: 0.8rem;
+        color: #6c757d;
+        justify-content: center !important;
+    }
+</style>
 {% endblock %}

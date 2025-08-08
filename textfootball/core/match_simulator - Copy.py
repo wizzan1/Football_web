@@ -105,7 +105,7 @@ def goal_probability(shooter_eff: float, keeper_eff: float, scaling=GK_SHOT_SCAL
 class MatchTeam:
     def __init__(self, team_model, is_home=False, fixed_lineup_ids=None):
         self.team = team_model
-        self.color = team_model.color or '#cccccc'
+        self.color = team_model.color if team_model else '#cccccc'
         self.is_home = is_home
         self.fixed_lineup_ids = fixed_lineup_ids
         self.lineup = {}
@@ -369,18 +369,18 @@ class MatchSimulator:
         attacker = fk_event['team']
         defender = self.team_b if attacker == self.team_a else self.team_a
         zone, (_, p_direct, p_indirect_attack, def_mod) = fk_event['zone'], FK_ZONES[fk_event['zone']]
-        self.log_event(f"Free Kick to <span style='color:{attacker.color};font-weight:bold;'>{attacker.team.name}</span> in a {zone.lower()} position.", event_type='FREE_KICK', importance='set_piece')
+        self.log_event(f"Free Kick to {attacker.team.name} in a {zone.lower()} position.", event_type='FREE_KICK', importance='set_piece')
         action_roll = random.random()
         if action_roll < p_direct:
             self.resolve_direct_free_kick(attacker, defender, zone)
         elif action_roll < (p_direct + p_indirect_attack):
             attacker.record_stat('passes_won')
-            self.log_event(f"<span style='color:{attacker.color};font-weight:bold;'>{attacker.team.name}</span> sends a cross or pass into the attacking zone.", event_type='INDIRECT_FK_ATTACK')
+            self.log_event(f"{attacker.team.name} sends a cross or pass into the attacking zone.", event_type='INDIRECT_FK_ATTACK')
             self.possession = attacker
             self.zone = 'A' if attacker == self.team_a else 'B'
             self.resolve_attack(attacker, defender, defense_modifier=def_mod)
         else:
-            self.log_event(f"<span style='color:{attacker.color};font-weight:bold;'>{attacker.team.name}</span> restarts play safely.", event_type='FK_RESTART', importance='minor')
+            self.log_event(f"{attacker.team.name} restarts play safely.", event_type='FK_RESTART', importance='minor')
             self.possession = attacker
             self.zone = 'M'
 
@@ -390,7 +390,7 @@ class MatchSimulator:
 
         attacker.record_stat('shots')
 
-        self.log_event(f"<span style='color:{attacker.color};font-weight:bold;'>{taker.name}</span> steps up to take the direct free kick.", importance='high', event_type='DIRECT_FK')
+        self.log_event(f"{taker.name} steps up to take the direct free kick.", importance='high', event_type='DIRECT_FK')
         dist_factor = {'DANGEROUS': 1.3, 'ATTACKING': 0.8, 'MIDDLE': 0.3}.get(zone, 0.1)
         final_conv_factor = FK_GOAL_CONVERSION_FACTOR_BASE * dist_factor
         prob = goal_probability(taker.effective_fk_ability, goalkeeper.effective_skill, scaling=FK_SHOT_SCALING, base_conversion_factor=final_conv_factor)
@@ -400,7 +400,7 @@ class MatchSimulator:
             attacker.record_goal(taker)
             if self.logging_enabled:
                 details = f"Direct FK ({zone}): {taker.name} (Eff FK: {taker.effective_fk_ability:.1f}) vs {goalkeeper.name} (Eff GK: {goalkeeper.effective_skill:.1f})\n- Prob: {prob:.1%}, Roll: {roll:.3f} -> GOAL"
-                self.log_event(f"GOAL! <i class='bi bi-trophy-fill' style='color:gold;'></i> <span style='color:{attacker.color};font-weight:bold;'>{taker.name}</span>! ({self.team_a.score}-{self.team_b.score})", importance='goal', event_type='GOAL_FK', details=details)
+                self.log_event(f"GOAL! {taker.name}! ({self.team_a.score}-{self.team_b.score})", importance='goal', event_type='GOAL_FK', details=details)
             self.possession = defender
             self.zone = 'M'
         else:
@@ -417,11 +417,11 @@ class MatchSimulator:
         if roll < prob:
             attacker.record_stat('passes_won')
             self.zone = 'A' if attacker == self.team_a else 'B'
-            if self.logging_enabled: self.log_event(f"<span style='color:{attacker.color};font-weight:bold;'>{attacker.team.name}</span> advances.")
+            if self.logging_enabled: self.log_event(f"{attacker.team.name} advances.")
         else:
             defender.record_stat('tackles_won')
             self.possession = defender
-            if self.logging_enabled: self.log_event(f"<span style='color:{defender.color};font-weight:bold;'>{defender.team.name}</span> wins the ball.")
+            if self.logging_enabled: self.log_event(f"{defender.team.name} wins the ball.")
 
     def resolve_attack(self, attacker, defender, defense_modifier=1.0):
         att_str = attacker.zonal_strength[Position.FORWARD]
@@ -432,13 +432,13 @@ class MatchSimulator:
             self.resolve_shot(attacker, defender)
         else:
             if random.random() < PENALTY_AWARD_PROBABILITY:
-                self.log_event(f"PENALTY to <span style='color:{attacker.color};font-weight:bold;'>{attacker.team.name}</span>!", event_type='PENALTY_AWARDED', importance='high')
+                self.log_event(f"PENALTY to {attacker.team.name}!", event_type='PENALTY_AWARDED', importance='high')
                 self.resolve_penalty_kick(attacker, defender)
             else:
                 defender.record_stat('tackles_won')
                 self.possession = defender
                 self.zone = 'M'
-                if self.logging_enabled: self.log_event(f"<span style='color:{defender.color};font-weight:bold;'>{defender.team.name}</span>'s defense holds firm.", event_type='DEFENSIVE_STOP')
+                if self.logging_enabled: self.log_event(f"{defender.team.name}'s defense holds firm.", event_type='DEFENSIVE_STOP')
 
     def resolve_shot(self, attacker, defender):
         shooter, goalkeeper = attacker.get_random_player([Position.FORWARD, Position.MIDFIELDER]), defender.get_goalkeeper()
@@ -457,7 +457,7 @@ class MatchSimulator:
         else: danger_level = "Low"
 
         if self.logging_enabled:
-            pre_shot_msg = f"<span style='color:{attacker.color};font-weight:bold;'>{shooter.name}</span> is taking a shot!"
+            pre_shot_msg = f"{shooter.name} is taking a shot!"
             metadata = {
                 'distance': f"{distance:.1f}m",
                 'danger_level': danger_level
@@ -469,15 +469,15 @@ class MatchSimulator:
             attacker.record_goal(shooter)
             if self.logging_enabled:
                 details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Dist: {distance:.1f}m, Prob: {prob:.1%}, Roll: {roll:.3f} -> GOAL"
-                self.log_event(f"GOAL! <i class='bi bi-trophy-fill' style='color:gold;'></i> <span style='color:{attacker.color};font-weight:bold;'>{shooter.name}</span>! ({self.team_a.score}-{self.team_b.score})", importance='goal', event_type='GOAL', details=details)
+                self.log_event(f"GOAL! {shooter.name}! ({self.team_a.score}-{self.team_b.score})", importance='goal', event_type='GOAL', details=details)
         else:
             if self.logging_enabled:
                 details = f"Shot: {shooter.name} ({shooter.effective_skill:.1f}) vs {goalkeeper.name} ({goalkeeper.effective_skill:.1f})\n- Dist: {distance:.1f}m, Prob: {prob:.1%}, Roll: {roll:.3f} -> NO GOAL"
                 if prob - roll < 0.1:
-                    outcome_msg = f"WHAT A SAVE by <span style='color:{defender.color};font-weight:bold;'>{goalkeeper.name}</span>! <i class='bi bi-shield-fill' style='color:silver;'></i>"
+                    outcome_msg = f"WHAT A SAVE by {goalkeeper.name}!"
                     importance = 'save'
                 else:
-                    outcome_msg = f"JUST WIDE! Shot by <span style='color:{attacker.color};font-weight:bold;'>{shooter.name}</span>."
+                    outcome_msg = f"JUST WIDE! Shot by {shooter.name}."
                     importance = 'miss'
                 self.log_event(outcome_msg, importance=importance, event_type='MISS', details=details)
 
@@ -499,11 +499,11 @@ class MatchSimulator:
                        f"- Pen Scaling: {PENALTY_SCALING}, Conv Factor: {PENALTY_CONVERSION_FACTOR:.2f}\n"
                        f"- Prob: {prob:.1%}, Roll: {roll:.3f} -> {'GOAL' if is_goal else 'NO GOAL'}")
             if is_shootout_kick:
-                msg = f"GOAL! <span style='color:{attacker.color};font-weight:bold;'>{taker.name}</span> scores." if is_goal else f"SAVED! <span style='color:{defender.color};font-weight:bold;'>{goalkeeper.name}</span> denies <span style='color:{attacker.color};font-weight:bold;'>{taker.name}</span>!"
+                msg = f"GOAL! {taker.name} scores." if is_goal else f"SAVED! {goalkeeper.name} denies {taker.name}!"
                 self.log_event(msg, importance='high', event_type='SHOOTOUT_KICK', details=details)
             else:
-                if is_goal: self.log_event(f"GOAL! <span style='color:{attacker.color};font-weight:bold;'>{taker.name}</span> converts! ({self.team_a.score+1 if attacker == self.team_a else self.team_a.score}-{self.team_b.score+1 if attacker == self.team_b else self.team_b.score})", importance='goal', event_type='GOAL_PENALTY', details=details)
-                else: self.log_event(f"MISSED! <span style='color:{attacker.color};font-weight:bold;'>{taker.name}</span>'s penalty is saved or wide!", importance='miss', event_type='MISS_PENALTY', details=details)
+                if is_goal: self.log_event(f"GOAL! {taker.name} converts! ({self.team_a.score+1 if attacker == self.team_a else self.team_a.score}-{self.team_b.score+1 if attacker == self.team_b else self.team_b.score})", importance='goal', event_type='GOAL_PENALTY', details=details)
+                else: self.log_event(f"MISSED! {taker.name}'s penalty is saved or wide!", importance='miss', event_type='MISS_PENALTY', details=details)
 
         if not is_shootout_kick:
             if is_goal:
@@ -525,7 +525,7 @@ class MatchSimulator:
             if self.resolve_penalty_kick(self.team_a, self.team_b, taker=team_a_takers[i], is_shootout_kick=True): self.shootout_score_a += 1
             if self.shootout_score_a > self.shootout_score_b + (5 - i) or self.shootout_score_b > self.shootout_score_a + (4 - i): break
             if self.resolve_penalty_kick(self.team_b, self.team_a, taker=team_b_takers[i], is_shootout_kick=True): self.shootout_score_b += 1
-            self.log_event(f"Score: <span style='color:{self.team_a.color};'>{self.team_a.team.name} {self.shootout_score_a}</span> - <span style='color:{self.team_b.color};'>{self.shootout_score_b} {self.team_b.team.name}</span>", importance='info')
+            self.log_event(f"Score: {self.team_a.team.name} {self.shootout_score_a} - {self.shootout_score_b} {self.team_b.team.name}", importance='info')
             if self.shootout_score_a > self.shootout_score_b + (4 - i) or self.shootout_score_b > self.shootout_score_a + (4 - i): break
 
         if self.shootout_score_a == self.shootout_score_b:
@@ -539,11 +539,11 @@ class MatchSimulator:
                 goal_b = self.resolve_penalty_kick(self.team_b, self.team_a, taker=rem_b[round_num % len(rem_b)], is_shootout_kick=True)
                 if goal_a: self.shootout_score_a += 1
                 if goal_b: self.shootout_score_b += 1
-                self.log_event(f"Score: <span style='color:{self.team_a.color};'>{self.team_a.team.name} {self.shootout_score_a}</span> - <span style='color:{self.team_b.color};'>{self.shootout_score_b} {self.team_b.team.name}</span>", importance='info')
+                self.log_event(f"Score: {self.team_a.team.name} {self.shootout_score_a} - {self.shootout_score_b} {self.team_b.team.name}", importance='info')
                 round_num += 1
 
         self.winner_on_penalties = self.team_a.team.name if self.shootout_score_a > self.shootout_score_b else self.team_b.team.name
-        self.log_event(f"<span style='color:{self.team_a.color if self.winner_on_penalties == self.team_a.team.name else self.team_b.color};font-weight:bold;'>{self.winner_on_penalties}</span> wins the shootout {self.shootout_score_a}-{self.shootout_score_b}!", importance='final', event_type='SHOOTOUT_END')
+        self.log_event(f"{self.winner_on_penalties} wins the shootout {self.shootout_score_a}-{self.shootout_score_b}!", importance='final', event_type='SHOOTOUT_END')
 
     def apply_post_match_morale_updates(self):
         score_a, score_b = self.team_a.score, self.team_b.score
