@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Leagues{% endblock %}
+{% block content %}
+<div class="container">
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-white">
+            <h1 class="h2 mb-0">⚽ League Hub</h1>
+        </div>
+        <div class="card-body">
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <a href="{{ url_for('league.browse') }}" class="btn btn-primary btn-lg w-100">
+                        <i class="bi bi-search"></i> Browse Leagues
+                    </a>
+                </div>
+                <div class="col-md-4">
+                    <a href="{{ url_for('league.create') }}" class="btn btn-success btn-lg w-100">
+                        <i class="bi bi-plus-circle"></i> Create League
+                    </a>
+                </div>
+                <div class="col-md-4">
+                    <button class="btn btn-info btn-lg w-100" disabled>
+                        <i class="bi bi-key"></i> Join Private League
+                    </button>
+                </div>
+            </div>
+
+            <h3 class="border-bottom pb-2 mb-3">My Active Leagues</h3>
+            {% if my_leagues %}
+                <div class="row">
+                    {% for entry in my_leagues %}
+                    <div class="col-md-6 mb-3">
+                        <div class="card border-primary">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0">{{ entry.league.name }}</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span>
+                                        <i class="bi bi-people-fill"></i> 
+                                        {{ entry.league.current_team_count }}/{{ entry.league.max_teams }} teams
+                                    </span>
+                                    <span class="badge 
+                                        {% if entry.league.status.value == 'recruiting' %}bg-warning
+                                        {% elif entry.league.status.value == 'active' %}bg-success
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ entry.league.status.value|title }}
+                                    </span>
+                                </div>
+                                
+                                <div class="mb-2">
+                                    <strong>Your Team:</strong> 
+                                    <span style="color: {{ entry.team.color }};">{{ entry.team.name }}</span>
+                                </div>
+                                
+                                {% if entry.league.status.value == 'active' %}
+                                <div class="mb-2">
+                                    <strong>Position:</strong> {{ entry.participation.position|default('--') }}
+                                    <span class="text-muted ms-2">
+                                        ({{ entry.participation.points }} pts)
+                                    </span>
+                                </div>
+                                <div class="mb-2">
+                                    <strong>Record:</strong> 
+                                    {{ entry.participation.won }}W-{{ entry.participation.drawn }}D-{{ entry.participation.lost }}L
+                                </div>
+                                {% endif %}
+                                
+                                <a href="{{ url_for('league.view', league_id=entry.league.id) }}" 
+                                   class="btn btn-outline-primary btn-sm w-100">
+                                    View League
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 
+                    You're not currently in any leagues. 
+                    <a href="{{ url_for('league.browse') }}">Browse available leagues</a> 
+                    or <a href="{{ url_for('league.create') }}">create your own</a>!
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

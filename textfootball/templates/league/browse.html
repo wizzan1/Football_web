@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Browse Leagues{% endblock %}
+{% block content %}
+<div class="container">
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2 class="mb-0"><i class="bi bi-search"></i> Browse Available Leagues</h2>
+                <a href="{{ url_for('league.index') }}" class="btn btn-light btn-sm">
+                    <i class="bi bi-arrow-left"></i> Back to Hub
+                </a>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if leagues %}
+                <div class="row">
+                    {% for league in leagues %}
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100 {% if league.spots_available <= 2 %}border-warning{% endif %}">
+                            <div class="card-header">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0">{{ league.name }}</h5>
+                                    {% if league.spots_available <= 2 %}
+                                        <span class="badge bg-warning">Almost Full!</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                {% if league.description %}
+                                    <p class="text-muted small">{{ league.description }}</p>
+                                {% endif %}
+                                
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span><i class="bi bi-person"></i> Created by:</span>
+                                        <strong>{{ league.creator.username }}</strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span><i class="bi bi-people-fill"></i> Teams:</span>
+                                        <strong>{{ league.current_team_count }}/{{ league.max_teams }}</strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span><i class="bi bi-calendar3"></i> Match Frequency:</span>
+                                        <strong>Every {{ league.match_frequency }} days</strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between">
+                                        <span><i class="bi bi-flag"></i> Status:</span>
+                                        <span class="badge bg-success">Recruiting</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Progress bar showing how full the league is -->
+                                <div class="progress mb-3" style="height: 25px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" 
+                                         style="width: {{ (league.current_team_count / league.max_teams * 100)|int }}%"
+                                         aria-valuenow="{{ league.current_team_count }}" 
+                                         aria-valuemin="0" 
+                                         aria-valuemax="{{ league.max_teams }}">
+                                        {{ league.current_team_count }}/{{ league.max_teams }} teams
+                                    </div>
+                                </div>
+                                
+                                <a href="{{ url_for('league.view', league_id=league.id) }}" 
+                                   class="btn btn-primary w-100">
+                                    <i class="bi bi-eye"></i> View & Join
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info text-center">
+                    <h4><i class="bi bi-info-circle"></i> No Available Leagues</h4>
+                    <p>There are currently no public leagues recruiting teams.</p>
+                    <a href="{{ url_for('league.create') }}" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> Create Your Own League
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

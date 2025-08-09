@@ -22,8 +22,10 @@ def create_app(config_class):
     # Import and register the blueprints (this part remains the same)
     from .blueprints.auth.routes import auth_bp
     from .blueprints.game.routes import game_bp
+    from .blueprints.league.routes import league_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(game_bp)
+    app.register_blueprint(league_bp)
 
     # Context processor to inject selected_team and user_teams into all templates
     @app.context_processor

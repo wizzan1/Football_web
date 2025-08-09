@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}{{ league.name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <!-- League Header -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h2 mb-0">🏆 {{ league.name }}</h1>
+                    <small>Season {{ league.season }} • Round {{ league.current_round|default('--') }}</small>
+                </div>
+                <div>
+                    <span class="badge 
+                        {% if league.status.value == 'recruiting' %}bg-warning
+                        {% elif league.status.value == 'active' %}bg-success
+                        {% elif league.status.value == 'completed' %}bg-secondary
+                        {% else %}bg-info{% endif %} fs-6">
+                        {{ league.status.value|title }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- League Actions -->
+        {% if league.status.value == 'recruiting' %}
+        <div class="card-body bg-light">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <p class="mb-0">
+                        <i class="bi bi-people-fill"></i> 
+                        <strong>{{ league.current_team_count }}/{{ league.max_teams }}</strong> teams joined
+                        {% if league.can_start %}
+                            • Ready to start!
+                        {% else %}
+                            • Need {{ league.min_teams - league.current_team_count }} more team(s) to start
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="col-md-4 text-end">
+                    {% if not user_participation %}
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#joinModal">
+                            <i class="bi bi-plus-circle"></i> Join League
+                        </button>
+                    {% elif is_creator and league.can_start %}
+                        <form method="POST" action="{{ url_for('league.start', league_id=league.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-play-circle"></i> Start Season
+                            </button>
+                        </form>
+                    {% endif %}
+                    
+                    {% if user_participation %}
+                        <form method="POST" action="{{ url_for('league.leave', league_id=league.id) }}" class="d-inline">
+                            <input type="hidden" name="team_id" value="{{ user_team.id }}">
+                            <button type="submit" class="btn btn-danger btn-sm" 
+                                    onclick="return confirm('Are you sure you want to leave this league?')">
+                                <i class="bi bi-box-arrow-right"></i> Leave
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="row">
+        <!-- League Table -->
+        <div class="col-lg-7">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h3 class="mb-0">League Table</h3>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th width="50">Pos</th>
+                                    <th>Team</th>
+                                    <th class="text-center">P</th>
+                                    <th class="text-center">W</th>
+                                    <th class="text-center">D</th>
+                                    <th class="text-center">L</th>
+                                    <th class="text-center">GF</th>
+                                    <th class="text-center">GA</th>
+                                    <th class="text-center">GD</th>
+                                    <th class="text-center"><strong>Pts</strong></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if standings %}
+                                    {% for entry in standings %}
+                                    <tr {% if user_team and entry.team_id == user_team.id %}class="table-primary fw-bold"{% endif %}>
+                                        <td>
+                                            {{ loop.index }}
+                                            {% if loop.index <= 2 %}
+                                                <i class="bi bi-trophy-fill text-warning"></i>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="rounded-circle me-2" 
+                                                     style="width: 20px; height: 20px; background-color: {{ entry.team.color }};"></div>
+                                                {{ entry.team.name }}
+                                                {% if user_team and entry.team_id == user_team.id %}
+                                                    <span class="badge bg-primary ms-2">You</span>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                        <td class="text-center">{{ entry.played }}</td>
+                                        <td class="text-center">{{ entry.won }}</td>
+                                        <td class="text-center">{{ entry.drawn }}</td>
+                                        <td class="text-center">{{ entry.lost }}</td>
+                                        <td class="text-center">{{ entry.goals_for }}</td>
+                                        <td class="text-center">{{ entry.goals_against }}</td>
+                                        <td class="text-center">
+                                            {% if entry.goal_difference > 0 %}+{% endif %}{{ entry.goal_difference }}
+                                        </td>
+                                        <td class="text-center"><strong>{{ entry.points }}</strong></td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="10" class="text-center text-muted py-3">
+                                            No teams have joined yet
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Fixtures & Results -->
+        <div class="col-lg-5">
+            {% if league.status.value == 'active' %}
+            <!-- Upcoming Fixtures -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Upcoming Fixtures</h5>
+                </div>
+                <div class="card-body">
+                    {% if upcoming_fixtures %}
+                        {% for fixture in upcoming_fixtures %}
+                        <div class="fixture-item mb-3 p-2 border rounded">
+                            <div class="text-muted small">Round {{ fixture.round }}</div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span style="color: {{ fixture.home_team.color }};">
+                                    {{ fixture.home_team.name }}
+                                </span>
+                                <span class="text-muted">vs</span>
+                                <span style="color: {{ fixture.away_team.color }};">
+                                    {{ fixture.away_team.name }}
+                                </span>
+                            </div>
+                            {% if fixture.scheduled_date %}
+                                <div class="text-muted small text-center">
+                                    {{ fixture.scheduled_date.strftime('%d %b %Y') }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No upcoming fixtures</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Recent Results -->
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0">Recent Results</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_results %}
+                        {% for fixture in recent_results %}
+                        <div class="fixture-item mb-3 p-2 border rounded">
+                            <div class="text-muted small">Round {{ fixture.round }}</div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span style="color: {{ fixture.home_team.color }};">
+                                    {{ fixture.home_team.name }}
+                                </span>
+                                <span class="badge bg-dark">
+                                    {{ fixture.home_score }} - {{ fixture.away_score }}
+                                </span>
+                                <span style="color: {{ fixture.away_team.color }};">
+                                    {{ fixture.away_team.name }}
+                                </span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No matches played yet</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- League Info -->
+            {% if league.status.value == 'recruiting' %}
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0">League Information</h5>
+                </div>
+                <div class="card-body">
+                    {% if league.description %}
+                        <p>{{ league.description }}</p>
+                    {% endif %}
+                    <dl class="row">
+                        <dt class="col-sm-5">Creator:</dt>
+                        <dd class="col-sm-7">{{ league.creator.username }}</dd>
+                        
+                        <dt class="col-sm-5">Format:</dt>
+                        <dd class="col-sm-7">Double Round-Robin</dd>
+                        
+                        <dt class="col-sm-5">Match Frequency:</dt>
+                        <dd class="col-sm-7">Every {{ league.match_frequency }} days</dd>
+                        
+                        <dt class="col-sm-5">Privacy:</dt>
+                        <dd class="col-sm-7">
+                            {% if league.is_public %}
+                                <i class="bi bi-globe"></i> Public
+                            {% else %}
+                                <i class="bi bi-lock"></i> Private
+                            {% endif %}
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Join League Modal -->
+{% if not user_participation and league.status.value == 'recruiting' %}
+<div class="modal fade" id="joinModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Join {{ league.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('league.join', league_id=league.id) }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Select Your Team:</label>
+                        <select name="team_id" class="form-select" required>
+                            <option value="">Choose a team...</option>
+                            {% for team in user_teams %}
+                                {% if not team.league_participations %}
+                                    <option value="{{ team.id }}">{{ team.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Only teams not in a league are shown</small>
+                    </div>
+                    
+                    {% if not league.is_public and league.password %}
+                    <div class="mb-3">
+                        <label class="form-label">League Password:</label>
+                        <input type="password" name="password" class="form-control" required>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Join League</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

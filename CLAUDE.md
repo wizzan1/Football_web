@@ -5,8 +5,10 @@ This project is a web-based text football management game built with **Flask**. 
 
 Recent updates have significantly enhanced the user experience by introducing:
 -   **Team-specific colors** (with random defaults for diversity).
--   A real-time **match dominance visualizer** with animated movement for excitement.
--   A more dramatic, **suspense-driven event timeline** for match results featuring colored storytelling and icons for professional appeal.
+-   A real-time **match dominance visualizer** with animated movement.
+-   A dramatic, **suspense-driven event timeline** for match results.
+-   A foundational **Trait System** that grants players special bonuses and visual badges.
+-   A comprehensive **League System** allowing users to create, join, and compete in persistent leagues with standings and fixtures.
 
 Player starter squads now initialize with a fixed skill level for balancing purposes, configurable via the `STARTER_SKILL` constant.
 
@@ -52,6 +54,7 @@ flask shell
 >>> from textfootball.models.team import Team
 >>> from textfootball.models.player import Player, Position
 >>> from textfootball.models.message import Message
+>>> from textfootball.models.league import League, LeagueTeam, Fixture
 >>> db.create_all()
 >>> exit()
 ```
@@ -76,6 +79,7 @@ textfootball_game_web/
 │   ├── core/
 │   │   └── match_simulator.py
 │   ├── models/
+│   │   ├── league.py
 │   │   ├── message.py
 │   │   ├── player.py
 │   │   ├── team.py
@@ -91,43 +95,30 @@ textfootball_game_web/
 #### File Breakdown & Key Logic
 
 -   **`run.py`**: The main entry point to start the application. Imports `create_app` and runs the Flask app.
--   **`config.py`**: Defines configuration classes for different environments (`DevelopmentConfig`, `TestingConfig`). `TestingConfig` uses an in-memory SQLite database.
--   **`instance/database.db`**: The SQLite database file, kept out of version control.
--   **`textfootball/__init__.py`**: The application factory. This file contains the `create_app()` function which:
-    -   Initializes the Flask application and loads configuration.
-    -   Initializes extensions like SQLAlchemy (`db`).
-    -   Imports and registers all blueprints.
-    -   Contains application-wide logic like context processors (e.g., for injecting the current team into templates) and custom Jinja filters.
--   **`textfootball/core/match_simulator.py`**: **The core simulation engine for the entire game.**
-    -   The engine is event-driven and deeply integrated with the Player Morale System.
-    -   It features a **Dominance System** that calculates real-time match control based on possession, territory, and key actions.
-    -   Shot outcome logic is **distance-dependent**, making tactical positioning crucial.
-    -   It generates multi-stage event logs with HTML for colored storytelling, creating suspenseful **Shot Buildup Sequences** with pre-shot announcements before revealing the outcome.
-    -   After each match, it calculates nuanced **morale updates** for every player based on result, performance, and personality. This is conditionally disabled via `MORALE_EFFECT_ACTIVE=0`.
-    -   It contains modes for both detailed single-match simulation (which saves morale changes) and high-speed Monte Carlo analysis (which does not).
+-   **`config.py`**: Defines configuration classes for different environments.
+-   **`textfootball/__init__.py`**: The application factory. Initializes the app, extensions, and blueprints.
+-   **`textfootball/core/match_simulator.py`**: **The core simulation engine.** Deeply integrated with the Player Morale and Trait Systems. *Note: Currently used for one-off matches; league fixture simulation is not yet implemented.*
 -   **`textfootball/blueprints/game/routes.py`**: The main blueprint for all core gameplay features.
-    -   It is the hub for managerial agency, featuring a **Team Meeting system** where managers can Praise, Encourage, or Criticize their squad to directly impact player morale.
-    -   Starter squads are generated with diverse personalities, but with fixed `free_kick_ability=50` and `skill=50` (via `STARTER_SKILL` constant) for balancing.
-    -   Team creation assigns random colors if not specified for visual diversity.
--   **`textfootball/templates/match_result.html`**: Provides a rich, dynamic visualization of match outcomes.
-    -   Features a live-scrolling event timeline that builds suspense through a **Shot Buildup Sequence**.
-    -   A real-time **Dominance Bar** visually represents the flow of the match, shifting between team colors with an animated indicator.
--   **`textfootball/templates/simulate.html`**: The pre-match analysis page that uses team-specific colors in its probability charts and statistical tables.
--   **`textfootball/templates/player_page.html`**: A professional, visually rich page displaying all of a player's attributes.
-    -   **Header Design:** Features a team color gradient background, a large shirt number watermark, and icon-based badges for position, number, and age.
-    -   **Complete Attribute Display:** Uses a two-column card layout to show everything: core stats (Skill, Potential, Shape) with color-coded progress bars, the calculated `Effective Skill`, mental attributes (Morale with emoji indicators, Personality with descriptions), and special skills (Free Kicks, Penalties).
+    -   Handles managerial actions like **Team Meetings**.
+    -   Manages the entire **League System**: creating, browsing, joining, and viewing leagues. It contains the logic for fixture generation and starting a season.
+-   **`textfootball/templates/league_hub.html`**: The central dashboard for the league system, showing all leagues a user is in and providing navigation to create or browse others.
+-   **`textfootball/templates/league_view.html`**: The main page for a specific league, displaying the live league table, fixtures, results, and administrative controls.
+-   **`textfootball/templates/player_page.html`**: A professional, visually rich page displaying all of a player's attributes, including earned **Traits** as gradient badges.
+-   **`textfootball/templates/team_page.html`**: Displays the full squad list, including small icons next to player names to indicate any **specialist traits**.
 
 ---
 
 ## Data Models (`textfootball/models/`)
 
--   **`player.py`**: Defines the `Player` model and related `Enums` (`Position`, `Personality`).
-    -   This is the heart of the Player Morale System, defining personality (`Stoic`, `Volatile`, etc.) and morale level.
-    -   The crucial **`effective_skill`** property is dynamically calculated based on a player's base `skill`, current `shape`, and current `morale` (conditionally via `MORALE_EFFECT_ACTIVE=1`), making team psychology a key factor in performance.
+-   **`league.py`**: Defines the models for the league system.
+    -   **`League`**: The main entity with settings like name, privacy, size, and status (recruiting, in-progress).
+    -   **`LeagueTeam`**: A junction table linking a `Team` to a `League`, storing competitive stats (points, goals for, goals against, etc.).
+    -   **`Fixture`**: Represents a scheduled match between two teams in a league, including the match date and result fields.
+-   **`player.py`**: Defines the `Player` model and related `Enums`.
+    -   This is the heart of the Player Morale and Trait Systems.
+    -   The crucial **`effective_skill`** property is dynamically calculated from base skill, shape, morale, and trait bonuses.
 -   **`team.py`**: Defines the `Team` model.
-    -   Includes a customizable `color` field (hex code) for UI personalization.
-    -   Includes properties for calculating average squad morale (`average_morale`).
-    -   Includes a field (`last_meeting_date`) to manage the cooldown for team meetings.
+    -   Includes a customizable `color` field for UI personalization. A team can only be in one league at a time.
 -   **`user.py`**: Defines the `User` model for account information.
 -   **`message.py`**: Defines the `Message` model for private messages.
 
@@ -137,6 +128,7 @@ textfootball_game_web/
 
 Key constants that control game balance are explicitly defined in the code. When asked to balance or tweak gameplay, refer to these variables.
 
--   **`MORALE_EFFECT_ACTIVE = 0`**: Located in `textfootball/core/match_simulator.py`. This is a global flag to disable (0) or enable (1) the morale system's effect on player performance during matches. It is **currently OFF for balancing**.
--   **`STARTER_SKILL = 50`**: Located in `textfootball/blueprints/game/routes.py`. This sets the starting base `skill` for all newly generated players in a starter squad.
--   **Other Tunables**: The top of `match_simulator.py` contains many other constants for formation setup, home advantage, shot mechanics, goalkeeper scaling, free kicks, and penalties.
+-   **`MORALE_EFFECT_ACTIVE = 0`**: Located in `textfootball/core/match_simulator.py`. A global flag to toggle the morale system's effect on performance.
+-   **`STARTER_SKILL = 50`**: Located in `textfootball/blueprints/game/routes.py`. Sets the starting base skill for new players.
+-   **Trait Thresholds & Bonuses**: The logic for traits (e.g., skill >= 65 for a +15% bonus) is key for game balance.
+-   **League Settings**: League capacity (4-20 teams) and match frequency are configured during league creation.
