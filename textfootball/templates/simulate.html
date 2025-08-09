@@ -9,10 +9,10 @@
             <th scope="col" style="width: 25%;">Metric</th>
             <!-- Added background color with low opacity (33 hex for alpha) -->
             <th scope="col" class="{{ 'table-info' if fixture_stats.user_team.is_home }}" style="background-color: {{ fixture_stats.user_team.color }}33;">
-                {{ fixture_stats.user_team.name }} {% if fixture_stats.user_team.is_home %}(H){% endif %}
+                {{ fixture_stats.user_team.name }} {% if fixture_stats.user_team.is_home %}<span class="home-indicator">(H)</span>{% else %}<span class="away-indicator">(A)</span>{% endif %}
             </th>
             <th scope="col" class="{{ 'table-info' if fixture_stats.enemy_team.is_home }}" style="background-color: {{ fixture_stats.enemy_team.color }}33;">
-                {{ fixture_stats.enemy_team.name }} {% if fixture_stats.enemy_team.is_home %}(H){% endif %}
+                {{ fixture_stats.enemy_team.name }} {% if fixture_stats.enemy_team.is_home %}<span class="home-indicator">(H)</span>{% else %}<span class="away-indicator">(A)</span>{% endif %}
             </th>
         </tr>
     </thead>
@@ -29,22 +29,22 @@
         </tr>
         <tr class="fw-bold">
             <th scope="row">Avg. Effective Skill</th>
-            <td>{{ fixture_stats.user_team.avg_effective_skill|round(1) }}</td>
-            <td>{{ fixture_stats.enemy_team.avg_effective_skill|round(1) }}</td>
+            <td>{% if fixture_stats.user_team.is_home %}{{ fixture_stats.user_team.base_avg_effective_skill|round(1) }} → <strong class="home-bonus">{{ fixture_stats.user_team.avg_effective_skill|round(1) }}</strong> <small class="text-success">📈</small>{% else %}{{ fixture_stats.user_team.avg_effective_skill|round(1) }}{% endif %}</td>
+            <td>{% if fixture_stats.enemy_team.is_home %}{{ fixture_stats.enemy_team.base_avg_effective_skill|round(1) }} → <strong class="home-bonus">{{ fixture_stats.enemy_team.avg_effective_skill|round(1) }}</strong> <small class="text-success">📈</small>{% else %}{{ fixture_stats.enemy_team.avg_effective_skill|round(1) }}{% endif %}</td>
         </tr>
         {% for pos_key, pos_name in [('GOALKEEPER', 'GK'), ('DEFENDER', 'DEF'), ('MIDFIELDER', 'MID'), ('FORWARD', 'FWD')] %}
         <tr>
             <th scope="row">{{ pos_name }} Strength</th>
             <td>
                 {% if fixture_stats.user_team.is_home %}
-                    {{ fixture_stats.user_team.base_zonal_strength[pos_key]|round(1) }} → <strong>{{ fixture_stats.user_team.zonal_strength[pos_key]|round(1) }}</strong>
+                    {{ fixture_stats.user_team.base_zonal_strength[pos_key]|round(1) }} → <strong class="home-bonus">{{ fixture_stats.user_team.zonal_strength[pos_key]|round(1) }}</strong> <small class="text-success">📈</small>
                 {% else %}
                     {{ fixture_stats.user_team.zonal_strength[pos_key]|round(1) }}
                 {% endif %}
             </td>
             <td>
                 {% if fixture_stats.enemy_team.is_home %}
-                    {{ fixture_stats.enemy_team.base_zonal_strength[pos_key]|round(1) }} → <strong>{{ fixture_stats.enemy_team.zonal_strength[pos_key]|round(1) }}</strong>
+                    {{ fixture_stats.enemy_team.base_zonal_strength[pos_key]|round(1) }} → <strong class="home-bonus">{{ fixture_stats.enemy_team.zonal_strength[pos_key]|round(1) }}</strong> <small class="text-success">📈</small>
                 {% else %}
                     {{ fixture_stats.enemy_team.zonal_strength[pos_key]|round(1) }}
                 {% endif %}
@@ -214,6 +214,34 @@
         font-size: 0.8rem;
         color: #6c757d;
         justify-content: center !important;
+    }
+    
+    /* Home/Away Indicator Styling */
+    .home-indicator {
+        background-color: #28a745;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-left: 5px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    
+    .away-indicator {
+        background-color: #dc3545;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-left: 5px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    
+    .home-bonus {
+        color: #28a745;
+        text-decoration: underline;
     }
 </style>
 {% endblock %}

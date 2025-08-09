@@ -179,7 +179,8 @@ class MatchTeam:
         if starting_11:
             self.avg_base_skill = sum(p.skill for p in starting_11) / len(starting_11)
             self.avg_shape = sum(p.shape for p in starting_11) / len(starting_11)
-            self.avg_effective_skill = sum(p.effective_skill for p in starting_11) / len(starting_11)
+            self.base_avg_effective_skill = sum(p.effective_skill for p in starting_11) / len(starting_11)
+            self.avg_effective_skill = self.base_avg_effective_skill * HOME_ADVANTAGE_BOOST if self.is_home else self.base_avg_effective_skill
             self.avg_morale = sum(p.morale for p in starting_11) / len(starting_11)
 
     def calculate_zonal_strength(self):
@@ -201,7 +202,7 @@ class MatchTeam:
         return {
             'name': self.team.name, 'is_home': self.is_home,
             'color': self.color,
-            'avg_base_skill': self.avg_base_skill, 'avg_shape': self.avg_shape, 'avg_effective_skill': self.avg_effective_skill,
+            'avg_base_skill': self.avg_base_skill, 'avg_shape': self.avg_shape, 'base_avg_effective_skill': self.base_avg_effective_skill, 'avg_effective_skill': self.avg_effective_skill,
             'avg_morale': self.avg_morale,
             'base_zonal_strength': {pos.name: strength for pos, strength in self.base_zonal_strength.items()},
             'zonal_strength': {pos.name: strength for pos, strength in self.zonal_strength.items()},

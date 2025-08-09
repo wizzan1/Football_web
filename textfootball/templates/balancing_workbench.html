@@ -520,20 +520,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 <thead class="table-light">
                     <tr>
                         <th scope="col" style="width: 25%;">Metric</th>
-                        <th scope="col" class="${userStats.is_home ? 'table-info' : ''}">${userStats.name} ${userStats.is_home ? '(H)' : ''}</th>
-                        <th scope="col" class="${enemyStats.is_home ? 'table-info' : ''}">${enemyStats.name} ${enemyStats.is_home ? '(H)' : ''}</th>
+                        <th scope="col" class="${userStats.is_home ? 'table-info' : ''}">${userStats.name} ${userStats.is_home ? '<span class="home-indicator">(H)</span>' : '<span class="away-indicator">(A)</span>'}</th>
+                        <th scope="col" class="${enemyStats.is_home ? 'table-info' : ''}">${enemyStats.name} ${enemyStats.is_home ? '<span class="home-indicator">(H)</span>' : '<span class="away-indicator">(A)</span>'}</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr><th>Avg. Base Skill</th><td>${userStats.avg_base_skill.toFixed(1)}</td><td>${enemyStats.avg_base_skill.toFixed(1)}</td></tr>
                     <tr><th>Avg. Team Shape</th><td>${userStats.avg_shape.toFixed(1)}%</td><td>${enemyStats.avg_shape.toFixed(1)}%</td></tr>
                     <tr><th>Avg. Team Morale</th><td>${userStats.avg_morale.toFixed(1)}</td><td>${enemyStats.avg_morale.toFixed(1)}</td></tr>
-                    <tr class="fw-bold"><th>Avg. Effective Skill</th><td>${userStats.avg_effective_skill.toFixed(1)}</td><td>${enemyStats.avg_effective_skill.toFixed(1)}</td></tr>
+                    <tr class="fw-bold"><th>Avg. Effective Skill</th><td>${userStats.is_home ? `${userStats.base_avg_effective_skill.toFixed(1)} → <strong class="home-bonus">${userStats.avg_effective_skill.toFixed(1)}</strong> <small class="text-success">📈</small>` : userStats.avg_effective_skill.toFixed(1)}</td><td>${enemyStats.is_home ? `${enemyStats.base_avg_effective_skill.toFixed(1)} → <strong class="home-bonus">${enemyStats.avg_effective_skill.toFixed(1)}</strong> <small class="text-success">📈</small>` : enemyStats.avg_effective_skill.toFixed(1)}</td></tr>
                     ${['GOALKEEPER', 'DEFENDER', 'MIDFIELDER', 'FORWARD'].map(pos => `
                     <tr>
                         <th>${pos.substring(0,3)} Str</th>
-                        <td>${userStats.is_home ? `${userStats.base_zonal_strength[pos].toFixed(1)} → <strong>${userStats.zonal_strength[pos].toFixed(1)}</strong>` : userStats.zonal_strength[pos].toFixed(1)}</td>
-                        <td>${enemyStats.is_home ? `${enemyStats.base_zonal_strength[pos].toFixed(1)} → <strong>${enemyStats.zonal_strength[pos].toFixed(1)}</strong>` : enemyStats.zonal_strength[pos].toFixed(1)}</td>
+                        <td>${userStats.is_home ? `${userStats.base_zonal_strength[pos].toFixed(1)} → <strong class="home-bonus">${userStats.zonal_strength[pos].toFixed(1)}</strong> <small class="text-success">📈</small>` : userStats.zonal_strength[pos].toFixed(1)}</td>
+                        <td>${enemyStats.is_home ? `${enemyStats.base_zonal_strength[pos].toFixed(1)} → <strong class="home-bonus">${enemyStats.zonal_strength[pos].toFixed(1)}</strong> <small class="text-success">📈</small>` : enemyStats.zonal_strength[pos].toFixed(1)}</td>
                     </tr>
                     `).join('')}
                 </tbody>
@@ -662,4 +662,34 @@ document.addEventListener('DOMContentLoaded', function () {
     analyzeMoraleSettings();
 });
 </script>
+
+<style>
+    /* Home/Away Indicator Styling */
+    .home-indicator {
+        background-color: #28a745;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-left: 5px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    
+    .away-indicator {
+        background-color: #dc3545;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-left: 5px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    
+    .home-bonus {
+        color: #28a745;
+        text-decoration: underline;
+    }
+</style>
 {% endblock %}
