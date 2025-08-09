@@ -1,32 +1,281 @@
-<!-- app/templates/player_page.html (updated to use is_owner if needed in future) -->
 {% extends "base.html" %}
-{% block title %}{{ player.name }}{% endblock %}
+{% block title %}{{ player.name }} - Player Profile{% endblock %}
 {% block content %}
-<div class="card shadow-sm">
-    <div class="card-header bg-dark text-white">
-        <h1 class="h2 mb-0">{{ player.name }} <small class="text-white-50">#{{ player.shirt_number }} - {{ player.position.value }}</small></h1>
-    </div>
-    <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h3 class="card-title mb-0">Player Details</h3>
-            <a href="{{ url_for('game.team_page', team_id=player.team.id) }}" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-arrow-left"></i> Back to Team
-            </a>
+<div class="container-fluid">
+    <!-- Player Header Card -->
+    <div class="card shadow-lg mb-4 border-0">
+        <div class="card-header text-white position-relative overflow-hidden" 
+             style="background: linear-gradient(135deg, {{ player.team.color }}dd, {{ player.team.color }}99); min-height: 150px;">
+            <div class="position-absolute" style="top: -50px; right: -50px; font-size: 200px; opacity: 0.1; font-weight: bold;">
+                #{{ player.shirt_number }}
+            </div>
+            <div class="position-relative">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h1 class="display-4 mb-2 fw-bold">{{ player.name }}</h1>
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="badge bg-dark bg-opacity-75 fs-6">
+                                <i class="bi bi-person-badge"></i> {{ player.position.value }}
+                            </span>
+                            <span class="badge bg-dark bg-opacity-75 fs-6">
+                                <i class="bi bi-hash"></i> {{ player.shirt_number }}
+                            </span>
+                            <span class="badge bg-dark bg-opacity-75 fs-6">
+                                <i class="bi bi-calendar3"></i> {{ player.age }} years
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <a href="{{ url_for('game.team_page', team_id=player.team.id) }}" class="btn btn-light btn-sm">
+                            <i class="bi bi-arrow-left"></i> Back to {{ player.team.name }}
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
-        <dl class="row">
-            <dt class="col-sm-3">Age</dt>
-            <dd class="col-sm-9">{{ player.age }}</dd>
-            <dt class="col-sm-3">Position</dt>
-            <dd class="col-sm-9">{{ player.position.value }}</dd>
-            <dt class="col-sm-3">Skill</dt>
-            <dd class="col-sm-9">{{ player.skill }}</dd>
-            <dt class="col-sm-3">Potential (UV)</dt>
-            <dd class="col-sm-9">{{ player.potential }}</dd>
-            <dt class="col-sm-3">Shape</dt>
-            <dd class="col-sm-9">{{ player.shape }}%</dd>
-            <dt class="col-sm-3">Team</dt>
-            <dd class="col-sm-9">{{ player.team.name }} ({{ player.team.country }})</dd>
-        </dl>
+        
+        <div class="card-body">
+            <div class="row g-4">
+                <!-- Left Column: Core Stats -->
+                <div class="col-md-6">
+                    <div class="card h-100 border-0 bg-light">
+                        <div class="card-body">
+                            <h5 class="card-title mb-4">
+                                <i class="bi bi-graph-up text-primary"></i> Core Attributes
+                            </h5>
+                            
+                            <!-- Skill -->
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="fw-semibold">Base Skill</span>
+                                    <span class="badge bg-primary">{{ player.skill }}</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" 
+                                         style="width: {{ player.skill }}%"
+                                         aria-valuenow="{{ player.skill }}" aria-valuemin="0" aria-valuemax="100">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Potential -->
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="fw-semibold">Potential</span>
+                                    <span class="badge bg-info">{{ player.potential }}</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-info" role="progressbar" 
+                                         style="width: {{ player.potential }}%"
+                                         aria-valuenow="{{ player.potential }}" aria-valuemin="0" aria-valuemax="100">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Shape -->
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="fw-semibold">Physical Shape</span>
+                                    <span class="badge 
+                                        {% if player.shape >= 90 %}bg-success
+                                        {% elif player.shape >= 70 %}bg-warning
+                                        {% else %}bg-danger{% endif %}">
+                                        {{ player.shape }}%
+                                    </span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar 
+                                        {% if player.shape >= 90 %}bg-success
+                                        {% elif player.shape >= 70 %}bg-warning
+                                        {% else %}bg-danger{% endif %}" 
+                                         role="progressbar" 
+                                         style="width: {{ player.shape }}%"
+                                         aria-valuenow="{{ player.shape }}" aria-valuemin="0" aria-valuemax="100">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Effective Skill (Calculated) -->
+                            <div class="mb-4 p-3 bg-white rounded">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold text-primary">
+                                        <i class="bi bi-lightning-charge-fill"></i> Effective Skill
+                                    </span>
+                                    <span class="fs-4 fw-bold text-primary">{{ "%.1f"|format(player.effective_skill) }}</span>
+                                </div>
+                                <small class="text-muted">Calculated from base skill, shape, and morale</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right Column: Mental & Special Skills -->
+                <div class="col-md-6">
+                    <div class="card h-100 border-0 bg-light">
+                        <div class="card-body">
+                            <h5 class="card-title mb-4">
+                                <i class="bi bi-brain text-success"></i> Mental & Special Skills
+                            </h5>
+                            
+                            <!-- Morale -->
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="fw-semibold">Morale</span>
+                                    <span class="badge 
+                                        {% if player.morale >= 90 %}bg-success
+                                        {% elif player.morale >= 70 %}bg-info
+                                        {% elif player.morale >= 50 %}bg-warning
+                                        {% else %}bg-danger{% endif %}">
+                                        {{ player.morale }}%
+                                        {% if player.morale >= 90 %}😊
+                                        {% elif player.morale >= 70 %}🙂
+                                        {% elif player.morale >= 50 %}😐
+                                        {% else %}😔{% endif %}
+                                    </span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar 
+                                        {% if player.morale >= 90 %}bg-success
+                                        {% elif player.morale >= 70 %}bg-info
+                                        {% elif player.morale >= 50 %}bg-warning
+                                        {% else %}bg-danger{% endif %}" 
+                                         role="progressbar" 
+                                         style="width: {{ player.morale }}%"
+                                         aria-valuenow="{{ player.morale }}" aria-valuemin="0" aria-valuemax="100">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Personality -->
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="fw-semibold">Personality Type</span>
+                                    <span class="badge bg-secondary fs-6">
+                                        {% if player.personality.value == "Professional" %}
+                                            <i class="bi bi-briefcase"></i> Professional
+                                        {% elif player.personality.value == "Ambitious" %}
+                                            <i class="bi bi-trophy"></i> Ambitious
+                                        {% elif player.personality.value == "Stoic" %}
+                                            <i class="bi bi-shield"></i> Stoic
+                                        {% elif player.personality.value == "Volatile" %}
+                                            <i class="bi bi-lightning"></i> Volatile
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                <small class="text-muted">
+                                    {% if player.personality.value == "Professional" %}
+                                        Balanced reactions to events
+                                    {% elif player.personality.value == "Ambitious" %}
+                                        Thrives on success, dislikes failure
+                                    {% elif player.personality.value == "Stoic" %}
+                                        Mentally resilient, steady performer
+                                    {% elif player.personality.value == "Volatile" %}
+                                        Emotional highs and lows
+                                    {% endif %}
+                                </small>
+                            </div>
+                            
+                            <hr class="my-3">
+                            
+                            <!-- Special Skills -->
+                            <h6 class="mb-3 text-secondary">Special Abilities</h6>
+                            
+                            <!-- Free Kick Ability -->
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <small class="fw-semibold">Free Kicks</small>
+                                    <small>{{ player.free_kick_ability }}</small>
+                                </div>
+                                <div class="progress" style="height: 12px;">
+                                    <div class="progress-bar bg-secondary" role="progressbar" 
+                                         style="width: {{ player.free_kick_ability }}%">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Penalty Taking -->
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <small class="fw-semibold">Penalty Taking</small>
+                                    <small>{{ player.penalty_taking }}</small>
+                                </div>
+                                <div class="progress" style="height: 12px;">
+                                    <div class="progress-bar bg-secondary" role="progressbar" 
+                                         style="width: {{ player.penalty_taking }}%">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Penalty Saving (Only for Goalkeepers) -->
+                            {% if player.position.value == "Goalkeeper" %}
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <small class="fw-semibold">Penalty Saving</small>
+                                    <small>{{ player.penalty_saving }}</small>
+                                </div>
+                                <div class="progress" style="height: 12px;">
+                                    <div class="progress-bar bg-secondary" role="progressbar" 
+                                         style="width: {{ player.penalty_saving }}%">
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Bottom Section: Team Info & Actions -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card border-0 bg-light">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col-md-8">
+                                    <h6 class="text-muted mb-2">Team Information</h6>
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="d-flex align-items-center">
+                                            <div class="rounded-circle me-2" 
+                                                 style="width: 20px; height: 20px; background-color: {{ player.team.color }};"></div>
+                                            <strong>{{ player.team.name }}</strong>
+                                        </div>
+                                        <span class="text-muted">|</span>
+                                        <span><i class="bi bi-geo-alt"></i> {{ player.team.country }}</span>
+                                        <span class="text-muted">|</span>
+                                        <span><i class="bi bi-people"></i> Squad Member</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                                    {% if is_owner %}
+                                    <button class="btn btn-outline-primary" disabled>
+                                        <i class="bi bi-pencil"></i> Training (Coming Soon)
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<style>
+    .gap-3 {
+        gap: 1rem !important;
+    }
+    
+    .progress {
+        background-color: #e9ecef;
+    }
+    
+    .card {
+        transition: transform 0.2s;
+    }
+    
+    .bg-opacity-75 {
+        background-color: rgba(0, 0, 0, 0.75) !important;
+    }
+</style>
 {% endblock %}
