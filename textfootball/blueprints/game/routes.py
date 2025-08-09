@@ -1,7 +1,10 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
 from textfootball import db
-# MODIFIED: Add Personality to the model imports
-from textfootball.models import User, Team, Player, Position, Message, Personality
+# MODIFIED: Add Personality and PlayerTrait to the model imports
+from textfootball.models.user import User
+from textfootball.models.team import Team
+from textfootball.models.player import Player, Position, Personality, PlayerTrait
+from textfootball.models.message import Message
 import random
 import statistics
 from datetime import datetime
@@ -35,16 +38,27 @@ def _generate_starter_squad(team):
         skill = STARTER_SKILL
         current_pos = positions[i]
 
-        # Free Kick ability: Correlated with skill but with high variance
-        fk_ability = 50 # Fixed to 50 (default) for balancing, as per request; keep even to manually adjust parameters
+        # Free Kick ability: Give some players specialist level (>= 65)
+        # 20% chance to be a free kick specialist
+        if random.random() < 0.2:
+            fk_ability = random.randint(65, 80)  # Specialist level!
+        else:
+            fk_ability = random.randint(30, 60)  # Normal level
 
-        # NEW: Penalty Taking: Similar correlation to FK ability, representing composure.
-        pen_taking = max(10, min(99, skill + random.randint(-20, 20)))
+        # NEW: Penalty Taking: Similar system - some players are specialists
+        # 20% chance to be a penalty specialist
+        if random.random() < 0.2:
+            pen_taking = random.randint(65, 85)  # Specialist level!
+        else:
+            pen_taking = random.randint(35, 60)  # Normal level
 
         # NEW: Penalty Saving: Highly dependent on position. Goalkeepers are specialized.
         if current_pos == Position.GOALKEEPER:
-            # Goalkeepers are naturally good at this
-            pen_saving = max(40, min(90, skill + random.randint(5, 30)))
+            # 30% chance for goalkeeper to be a penalty specialist
+            if random.random() < 0.3:
+                pen_saving = random.randint(65, 85)  # Penalty stopper trait!
+            else:
+                pen_saving = random.randint(40, 60)  # Normal goalkeeper
         else:
             # Outfield players are generally poor at saving penalties
             pen_saving = random.randint(5, 25)

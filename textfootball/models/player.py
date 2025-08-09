@@ -11,6 +11,18 @@ class Position(enum.Enum):
     MIDFIELDER = "Midfielder"
     FORWARD = "Forward"
 
+# NEW: Player Trait System
+# Traits are earned when players reach certain skill thresholds
+# They provide significant bonuses to make specialization meaningful
+class PlayerTrait(enum.Enum):
+    # Format: (display_name, icon, description, skill_multiplier)
+    FREE_KICK_SPECIALIST = ("Free Kick Specialist", "🎯", "Expert at dead ball situations", 1.15)
+    PENALTY_SPECIALIST = ("Penalty Specialist", "🥅", "Ice cold from the spot", 1.15)
+    PENALTY_STOPPER = ("Penalty Stopper", "🧤", "Exceptional at saving penalties", 1.15)
+
+# Trait thresholds
+TRAIT_THRESHOLD = 65  # Minimum skill level to earn a trait
+
 # NEW: Personality Enum
 # The 'why': Players shouldn't react uniformly to events. Personality adds depth,
 # making some players resilient to losses (Stoic) and others highly motivated by wins (Ambitious).
@@ -83,24 +95,64 @@ class Player(db.Model):
         return base_effectiveness * morale_multiplier
 
     @property
+    def has_free_kick_trait(self):
+        """ Check if player has earned the Free Kick Specialist trait """
+        return self.free_kick_ability >= TRAIT_THRESHOLD
+    
+    @property
+    def has_penalty_trait(self):
+        """ Check if player has earned the Penalty Specialist trait """
+        return self.penalty_taking >= TRAIT_THRESHOLD
+    
+    @property
+    def has_penalty_stopper_trait(self):
+        """ Check if goalkeeper has earned the Penalty Stopper trait """
+        return self.position == Position.GOALKEEPER and self.penalty_saving >= TRAIT_THRESHOLD
+    
+    @property
+    def get_traits(self):
+        """ Returns a list of all traits this player has earned """
+        traits = []
+        if self.has_free_kick_trait:
+            traits.append(PlayerTrait.FREE_KICK_SPECIALIST)
+        if self.has_penalty_trait:
+            traits.append(PlayerTrait.PENALTY_SPECIALIST)
+        if self.has_penalty_stopper_trait:
+            traits.append(PlayerTrait.PENALTY_STOPPER)
+        return traits
+
+    @property
     def effective_fk_ability(self):
         """ Free kick ability, moderately influenced by shape (composure, focus). """
         shape_multiplier = 0.5 + (self.shape * 0.5 / 100.0)
-        # Note: We are intentionally NOT applying morale to specialty skills (FK/Penalties) for now.
-        # Composure is already modeled by 'shape'.
-        return self.free_kick_ability * shape_multiplier
+        base_ability = self.free_kick_ability * shape_multiplier
+        
+        # Apply trait bonus if player has earned it
+        if self.has_free_kick_trait:
+            return base_ability * PlayerTrait.FREE_KICK_SPECIALIST.value[3]
+        return base_ability
 
     @property
     def effective_penalty_taking(self):
         """ Penalty taking ability, moderately influenced by shape (composure, focus). """
         shape_multiplier = 0.5 + (self.shape * 0.5 / 100.0)
-        return self.penalty_taking * shape_multiplier
+        base_ability = self.penalty_taking * shape_multiplier
+        
+        # Apply trait bonus if player has earned it
+        if self.has_penalty_trait:
+            return base_ability * PlayerTrait.PENALTY_SPECIALIST.value[3]
+        return base_ability
 
     @property
     def effective_penalty_saving(self):
         """ Goalkeeper's penalty saving ability, moderately influenced by shape. """
         shape_multiplier = 0.5 + (self.shape * 0.5 / 100.0)
-        return self.penalty_saving * shape_multiplier
+        base_ability = self.penalty_saving * shape_multiplier
+        
+        # Apply trait bonus if goalkeeper has earned it
+        if self.has_penalty_stopper_trait:
+            return base_ability * PlayerTrait.PENALTY_STOPPER.value[3]
+        return base_ability
 
     def get_personality_multiplier(self, is_positive_event):
         """ Returns the morale adjustment multiplier based on personality. """
