@@ -20,14 +20,32 @@
         {% if user.teams %}
             <ul class="list-group">
                 {% for team in user.teams %}
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <a href="{{ url_for('game.team_page', team_id=team.id) }}" class="text-decoration-none">
-                            <h6 class="mb-0">{{ team.name }} <small class="text-muted">({{ team.country }})</small></h6>
-                        </a>
+                <li class="list-group-item d-flex justify-content-between align-items-center {% if selected_team and selected_team.id == team.id %}border-primary border-2{% endif %}" 
+                    {% if selected_team and selected_team.id == team.id %}style="background-color: rgba(13, 110, 253, 0.05);"{% endif %}>
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle me-3" style="width: 30px; height: 30px; background-color: {{ team.color }};"></div>
+                        <div>
+                            <a href="{{ url_for('game.team_page', team_id=team.id) }}" class="text-decoration-none">
+                                <h6 class="mb-0">
+                                    {{ team.name }} 
+                                    {% if selected_team and selected_team.id == team.id %}
+                                        <span class="badge bg-primary ms-2">Active</span>
+                                    {% endif %}
+                                    <small class="text-muted">({{ team.country }})</small>
+                                </h6>
+                            </a>
+                            {% if team.players %}
+                                <small class="text-muted">{{ team.players|length }} players • Avg. Morale: {{ "%.0f"|format(team.average_morale) }}%</small>
+                            {% endif %}
+                        </div>
                     </div>
                     <div>
-                        <a href="{{ url_for('game.team_page', team_id=team.id) }}" class="btn btn-outline-secondary btn-sm">Manage Team</a>
+                        {% if not (selected_team and selected_team.id == team.id) %}
+                            <a href="{{ url_for('game.select_team', team_id=team.id) }}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-check2-square"></i> Select
+                            </a>
+                        {% endif %}
+                        <a href="{{ url_for('game.team_page', team_id=team.id) }}" class="btn btn-outline-secondary btn-sm">Manage</a>
                         <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteTeamModal{{ team.id }}">
                             Delete
                         </button>

@@ -85,12 +85,29 @@ def team_page(team_id):
     team = Team.query.get_or_404(team_id)
     user = User.query.filter_by(username=session['username']).first()
     is_owner = (team.user_id == user.id)
-    if is_owner:
-        session['selected_team_id'] = team.id
+    # Don't auto-select team anymore - let user explicitly choose
     position_order = {Position.GOALKEEPER: 0, Position.DEFENDER: 1, Position.MIDFIELDER: 2, Position.FORWARD: 3}
     sorted_players = sorted(team.players, key=lambda p: (position_order[p.position], p.shirt_number))
     # Note: The user must update team_page.html to display the new penalty attributes.
     return render_template('team_page.html', team=team, players=sorted_players, is_owner=is_owner)
+
+@game_bp.route('/select-team/<int:team_id>')
+def select_team(team_id):
+    if 'username' not in session:
+        return redirect(url_for('auth_bp.login'))
+    
+    user = User.query.filter_by(username=session['username']).first()
+    team = Team.query.get_or_404(team_id)
+    
+    if team.user_id != user.id:
+        flash("You can only select your own teams.", "danger")
+        return redirect(request.referrer or url_for('game.dashboard'))
+    
+    session['selected_team_id'] = team.id
+    flash(f"Switched to team: {team.name}", "success")
+    
+    # Redirect back to the page the user came from
+    return redirect(request.referrer or url_for('game.dashboard'))
 
 @game_bp.route('/delete-team/<int:team_id>', methods=['POST'])
 def delete_team(team_id):
@@ -137,6 +154,14 @@ def create_team():
         # This function now generates penalty skills
         _generate_starter_squad(new_team)
         db.session.commit()
+        
+        # Auto-select the new team if it's the user's first team or no team is selected
+        if len(user.teams) == 1 or 'selected_team_id' not in session:
+            session['selected_team_id'] = new_team.id
+            flash(f"Team '{team_name}' created and selected!", "success")
+        else:
+            flash(f"Team '{team_name}' created successfully!", "success")
+            
         return redirect(url_for('game.dashboard'))
     return render_template('create_team.html')
 

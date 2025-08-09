@@ -41,10 +41,42 @@
                     {% endif %}
                 </ul>
 
-                {% if 'username' in session and selected_team %}
-                    <span class="navbar-text me-3">
-                        Active Team: <span class="badge bg-primary">{{ selected_team.name }}</span>
-                    </span>
+                <!-- Team Selector Dropdown -->
+                {% if 'username' in session and user_teams %}
+                    <div class="dropdown me-3">
+                        <button class="btn btn-outline-light dropdown-toggle d-flex align-items-center" type="button" id="teamDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            {% if selected_team %}
+                                <div class="d-flex align-items-center">
+                                    <div class="rounded-circle me-2" style="width: 20px; height: 20px; background-color: {{ selected_team.color }};"></div>
+                                    <span>{{ selected_team.name }}</span>
+                                </div>
+                            {% else %}
+                                <i class="bi bi-people-fill me-2"></i>
+                                Select Team
+                            {% endif %}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="teamDropdown">
+                            <li><h6 class="dropdown-header">Your Teams</h6></li>
+                            {% for team in user_teams %}
+                                <li>
+                                    <a class="dropdown-item d-flex align-items-center {% if selected_team and selected_team.id == team.id %}active{% endif %}" 
+                                       href="{{ url_for('game.select_team', team_id=team.id) }}">
+                                        <div class="rounded-circle me-2" style="width: 16px; height: 16px; background-color: {{ team.color }};"></div>
+                                        {{ team.name }}
+                                        {% if selected_team and selected_team.id == team.id %}
+                                            <i class="bi bi-check-lg ms-auto"></i>
+                                        {% endif %}
+                                    </a>
+                                </li>
+                            {% endfor %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('game.create_team') }}">
+                                    <i class="bi bi-plus-circle me-2"></i>Create New Team
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                 {% endif %}
 
                 {% if 'username' in session %}

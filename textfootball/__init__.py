@@ -25,15 +25,30 @@ def create_app(config_class):
     app.register_blueprint(auth_bp)
     app.register_blueprint(game_bp)
 
-    # Context processor to inject selected_team into all templates
-    # This is UNCHANGED
+    # Context processor to inject selected_team and user_teams into all templates
     @app.context_processor
     def inject_selected_team():
+        from .models.team import Team
+        from .models.user import User  # Import here to avoid circular dependencies
+        
+        user_teams = []
+        selected_team = None
+        
+        if 'username' in session:
+            user = User.query.filter_by(username=session['username']).first()
+            if user:
+                user_teams = user.teams
+                
         if 'selected_team_id' in session:
-            from .models import Team  # Import here to avoid circular dependencies
             selected_team = Team.query.get(session['selected_team_id'])
-            return dict(selected_team=selected_team)
-        return dict(selected_team=None)
+            # Verify the team still exists and belongs to the user
+            if selected_team and 'username' in session:
+                user = User.query.filter_by(username=session['username']).first()
+                if user and selected_team.user_id != user.id:
+                    selected_team = None
+                    session.pop('selected_team_id', None)
+                    
+        return dict(selected_team=selected_team, user_teams=user_teams)
 
     # Custom Jinja filter for nl2br
     # This is UNCHANGED
